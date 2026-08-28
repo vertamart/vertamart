@@ -1,0 +1,32 @@
+# Dependencias y build
+node_modules/
+dist/
+.desktop-release/
+android/.gradle/
+android/app/build/
+android/build/
+
+# Entornos y secretos (NUNCA subir .env con credenciales)
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.production.example
+
+# Base de datos local de desarrollo (contiene datos reales)
+server/verta.db
+server/*.db
+
+# Cloudflare / wrangler
+.wrangler/
+# No subir el LinkedIn de wrangler (token)
+# (wrangler.auth es caches local, se regenera)
+worker/.wrangler/
+
+# Logs y SO
+*.log
+.DS_Store
+Thumbs.db
+
+# Notas
+*.md.orig

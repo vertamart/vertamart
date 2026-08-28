@@ -1,0 +1,86 @@
+name: Build Vertamart (Windows + Android)
+
+# Compila y publica las apps instalables (Windows .exe y Android .apk).
+# - Se ejecuta al crear un tag v* (ej. v1.1.0) o manualmente desde Actions.
+# - Los dos instaladores quedan en la Release del repositorio, descargables por cualquiera.
+# - Los runners de GitHub ya traen Node, Java y Android SDK: no hace falta empaquetarlo localmente.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java (Android)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Enable Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web (API pública por defecto)
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+
+      - name: Generate app icons
+        run: node build/generate-icons.cjs
+
+      # ---------- APK de Android (depurable, instalable en cualquier móvil) ----------
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      # ---------- Instalador Windows (.exe) ----------
+      - name: Build Windows installer
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Prepare release files
+        run: |
+          VERSION=$(node -p "require('./package.json').build? (require('./package.json').version) : ''")
+          VERSION=${VERSION:-1.1.0}
+          cp android/app/build/outputs/apk/debug/app-debug.apk "Vertamart-v${VERSION}.apk"
+          cp .desktop-release/Vertamart-Setup-v${VERSION}.exe "Vertamart-Setup-v${VERSION}.exe" 2>/dev/null || true
+          ls -la Vertamart-* 2>/dev/null || true
+
+      - name: Upload artifacts (installable by anyone)
+        uses: actions/upload-artifact@v4
+        with:
+          name: vertamart-apps
+          path: |
+            Vertamart-*.apk
+            Vertamart-*.exe
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Vertamart ${{ github.ref_name }}
+          files: |
+            Vertamart-*.apk
+            Vertamart-*.exe
+          generate_release_notes: true

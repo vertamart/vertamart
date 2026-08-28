@@ -1,0 +1,25 @@
+-- Cada producto debe tener una URL de imagen única en el catálogo público.
+UPDATE products SET image = 'https://images.pexels.com/photos/36625733/pexels-photo-36625733.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'auriculares-verta-air-pro';
+UPDATE products SET image = 'https://images.pexels.com/photos/4041181/pexels-photo-4041181.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'smartwatch-verta-pulse-s2';
+UPDATE products SET image = 'https://images.pexels.com/photos/7915239/pexels-photo-7915239.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'teclado-mecanico-verta-ke65';
+UPDATE products SET image = 'https://images.pexels.com/photos/2115256/pexels-photo-2115256.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'mouse-inalambrico-verta-gear-x';
+UPDATE products SET image = 'https://images.pexels.com/photos/4219868/pexels-photo-4219868.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'cargador-gan-verta-100w';
+UPDATE products SET image = 'https://images.pexels.com/photos/777001/pexels-photo-777001.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'monitor-verta-pro-27';
+UPDATE products SET image = 'https://images.pexels.com/photos/29377913/pexels-photo-29377913.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'auriculares-over-ear-verta-studio';
+UPDATE products SET image = 'https://images.pexels.com/photos/1080751/pexels-photo-1080751.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'pulsera-fitness-verta-fit-lite';
+UPDATE products SET image = 'https://images.pexels.com/photos/18382823/pexels-photo-18382823.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'teclado-bluetooth-verta-mini';
+UPDATE products SET image = 'https://images.pexels.com/photos/3921711/pexels-photo-3921711.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'cable-usbc-silicona-verta';
+UPDATE products SET image = 'https://images.pexels.com/photos/27559487/pexels-photo-27559487.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'mouse-verta-max-pad';
+UPDATE products SET image = 'https://images.pexels.com/photos/668296/pexels-photo-668296.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'monitor-verta-gaming-24';
+UPDATE products SET image = 'https://images.pexels.com/photos/1034653/pexels-photo-1034653.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'bocina-verta-boom-360';
+UPDATE products SET image = 'https://images.pexels.com/photos/18966439/pexels-photo-18966439.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'auriculares-gamer-verta-one';
+UPDATE products SET image = 'https://images.pexels.com/photos/11617965/pexels-photo-11617965.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'smartband-verta-band-pro-2';
+UPDATE products SET image = 'https://images.pexels.com/photos/3999644/pexels-photo-3999644.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'smartwatch-verta-sport-ultra';
+UPDATE products SET image = 'https://images.pexels.com/photos/14130157/pexels-photo-14130157.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'teclado-verta-key-100';
+UPDATE products SET image = 'https://images.pexels.com/photos/32755759/pexels-photo-32755759.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'mouse-ergonomico-verta-ergo';
+UPDATE products SET image = 'https://images.pexels.com/photos/10104284/pexels-photo-10104284.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'powerbank-verta-20000';
+UPDATE products SET image = 'https://images.pexels.com/photos/7952558/pexels-photo-7952558.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'cargador-inalambrico-verta-pad';
+UPDATE products SET image = 'https://images.pexels.com/photos/30708285/pexels-photo-30708285.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'hub-usbc-verta-8en1';
+UPDATE products SET image = 'https://images.pexels.com/photos/10130153/pexels-photo-10130153.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'monitor-verta-ultrawide-34';
+UPDATE products SET image = 'https://images.pexels.com/photos/6045231/pexels-photo-6045231.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'monitor-portatil-verta-view-15';
+UPDATE products SET image = 'https://images.pexels.com/photos/8576158/pexels-photo-8576158.jpeg?auto=compress&cs=tinysrgb&w=800' WHERE slug = 'mousepad-verta-speed-xl';

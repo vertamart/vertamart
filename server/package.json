@@ -1,0 +1,16 @@
+{
+  "name": "verta-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "API de autenticación de Vertamart con SQLite (node:sqlite)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning index.js",
+    "watch": "node --watch --disable-warning=ExperimentalWarning index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "express": "^5.1.0"
+  }
+}

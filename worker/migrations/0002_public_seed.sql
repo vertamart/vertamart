@@ -1,0 +1,15 @@
+-- Compatibilidad con el esquema actual del Worker
+ALTER TABLE products ADD COLUMN product_code TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_product_code ON products(product_code) WHERE product_code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_products_status_created ON products(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feed_posts_created ON feed_posts(created_at DESC);
+
+INSERT OR IGNORE INTO products
+(owner_id, name, slug, category, price, old_price, rating, reviews, stock, badge, description, features, image, images, product_code)
+VALUES
+(NULL, 'Verta Air Pro ANC', 'auriculares-verta-air-pro', 'audio', 59990, 79990, 0, 0, 34, 'top', 'Auriculares inalámbricos con cancelación activa de ruido y hasta 36 horas de batería.', '["ANC híbrida","Bluetooth 5.3","Batería 36 h"]', 'https://images.pexels.com/photos/36625733/pexels-photo-36625733.jpeg?auto=compress&cs=tinysrgb&w=800', '["https://images.pexels.com/photos/36625733/pexels-photo-36625733.jpeg?auto=compress&cs=tinysrgb&w=800"]', 'VT-AIRPRO01'),
+(NULL, 'Verta Pulse S2', 'smartwatch-verta-pulse-s2', 'wearables', 89990, 119990, 0, 0, 22, 'nuevo', 'Smartwatch AMOLED con GPS y seguimiento de salud.', '["AMOLED","GPS","Batería 14 días"]', 'https://images.pexels.com/photos/4041181/pexels-photo-4041181.jpeg?auto=compress&cs=tinysrgb&w=800', '["https://images.pexels.com/photos/4041181/pexels-photo-4041181.jpeg?auto=compress&cs=tinysrgb&w=800"]', 'VT-PULSE02'),
+(NULL, 'Verta KE65 Mecánico', 'teclado-mecanico-verta-ke65', 'teclado', 54990, 69990, 0, 0, 48, 'popular', 'Teclado mecánico compacto 65% con RGB y conexión triple.', '["Hot-swap","RGB","USB-C, Bluetooth y 2.4 GHz"]', 'https://images.pexels.com/photos/7915239/pexels-photo-7915239.jpeg?auto=compress&cs=tinysrgb&w=800', '["https://images.pexels.com/photos/7915239/pexels-photo-7915239.jpeg?auto=compress&cs=tinysrgb&w=800"]', 'VT-KE6503'),
+(NULL, 'Verta Gear X Pro', 'mouse-inalambrico-verta-gear-x', 'mouse', 29990, 39990, 0, 0, 60, NULL, 'Mouse inalámbrico ultraligero con sensor de 26000 DPI.', '["58 g","26000 DPI","Batería 70 h"]', 'https://images.pexels.com/photos/2115256/pexels-photo-2115256.jpeg?auto=compress&cs=tinysrgb&w=800', '["https://images.pexels.com/photos/2115256/pexels-photo-2115256.jpeg?auto=compress&cs=tinysrgb&w=800"]', 'VT-GEARX04'),
+(NULL, 'Verta GaN Charge 100W', 'cargador-gan-verta-100w', 'carga', 34990, 44990, 0, 0, 80, 'top', 'Cargador GaN de 100 W con tres puertos.', '["100 W","2 USB-C + USB-A","PD 3.0"]', 'https://images.pexels.com/photos/4219868/pexels-photo-4219868.jpeg?auto=compress&cs=tinysrgb&w=800', '["https://images.pexels.com/photos/4219868/pexels-photo-4219868.jpeg?auto=compress&cs=tinysrgb&w=800"]', 'VT-GAN1005'),
+(NULL, 'Verta Pro 27 2K 165Hz', 'monitor-verta-pro-27', 'monitor', 329990, 399990, 0, 0, 11, 'popular', 'Monitor IPS QHD de 27 pulgadas con 165 Hz.', '["QHD","165 Hz","HDR400"]', 'https://images.pexels.com/photos/777001/pexels-photo-777001.jpeg?auto=compress&cs=tinysrgb&w=800', '["https://images.pexels.com/photos/777001/pexels-photo-777001.jpeg?auto=compress&cs=tinysrgb&w=800"]', 'VT-PRO2706');

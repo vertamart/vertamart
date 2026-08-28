@@ -1,0 +1,84 @@
+{
+  "name": "verta-shop",
+  "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c green,cyan \"npm run server\" \"vite\"",
+    "server": "npm --prefix server run watch",
+    "server:once": "npm --prefix server start",
+    "dev:all": "concurrently -k -n api,web -c green,cyan \"npm run server\" \"npm run dev\"",
+    "deploy:api": "npm --prefix worker run deploy",
+    "deploy:web": "npx wrangler pages deploy dist --project-name vertamart",
+    "build:prod": "tsc -b && vite build --mode production",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "desktop:build": "npm run build",
+    "desktop:dev": "npm run build && cross-env VERTAMART_PUBLIC_URL=https://vertamart.pages.dev electron .",
+  "desktop:dist": "npm run build && electron-builder --win nsis",
+  "desktop:dist:portable": "npm run build && electron-builder --win portable",
+  "apps:icons": "node build/generate-icons.cjs",
+  "android:sync": "npx cap sync android",
+  "android:apk": "npx cap sync android && cd android && gradlew.bat assembleDebug"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "lucide-react": "^1.34.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
+    "tailwindcss": "^4.3.3"
+  },
+  "build": {
+    "appId": "es.vertamart.shop",
+    "productName": "Vertamart",
+    "artifactName": "Vertamart-Setup-v${version}.${ext}",
+    "asar": true,
+    "directories": {
+      "output": ".desktop-release"
+    },
+    "files": [
+      "dist/**/*",
+      "server/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "desktop/main.cjs"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "Vertamart-Portable-v${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "concurrently": "^9.1.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "oxlint": "^1.79.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2"
+  }
+}

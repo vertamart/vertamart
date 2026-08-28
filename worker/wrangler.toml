@@ -1,0 +1,40 @@
+# Vertamart API — Cloudflare Worker
+# Para desplegar:  npx wrangler deploy  (desde worker/)
+name = "vertamart-api"
+main = "index.js"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Base de datos D1 (SQLite serverless). Crea la base con:
+#   npx wrangler d1 create vertamart
+# y pega el database_id resultante aquí (el de abajo es un placeholder local).
+[[d1_databases]]
+binding = "DB"
+database_name = "vertamart"
+database_id = "8f7aada3-0a14-46e0-8f6f-88f0aafc780c"
+migrations_dir = "migrations"
+
+# URL del frontend al que vuelven OAuth y los enlaces de recuperación.
+[vars]
+FRONTEND_URL = "https://vertamart.pages.dev"
+
+# Secretos opcionales (configúralos con: npx wrangler secret put NOMBRE)
+#
+# Pagos reales con PayPal:
+#   PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_ENV   # sandbox o live
+#
+# Correo (recuperación de contraseña). Sin RESEND_API_KEY, el endpoint
+# /auth/forgot-password devuelve el enlace en la respuesta (modo demo):
+#   RESEND_API_KEY, EMAIL_FROM          # ej. "Vertamart <soporte@tudominio.com>"
+#
+# Envío sin dominio propio (gratis) con Gmail SMTP:
+#   GMAIL_USER          # tu correo Gmail, ej. rcbegararoblox@gmail.com
+#   GMAIL_APP_PASSWORD  # contraseña de aplicación de Google (16 letras, sin espacios)
+#
+# Iniciar sesión con Google (console.cloud.google.com → Credenciales → OAuth 2.0):
+#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+#   URI de redirección autorizada: https://vertamart-api.rcbegararoblox.workers.dev/api/auth/google/callback
+#
+# Iniciar sesión con Apple (requiere cuenta Apple Developer):
+#   APPLE_CLIENT_ID (Services ID), APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY (clave .p8)
+#   Return URL: https://vertamart-api.rcbegararoblox.workers.dev/api/auth/apple/callback

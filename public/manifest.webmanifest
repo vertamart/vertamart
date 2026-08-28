@@ -1,0 +1,32 @@
+{
+  "name": "Vertamart — Tecnología Premium",
+  "short_name": "Vertamart",
+  "description": "Tienda online de tecnología premium. Auriculares, smartwatches, teclados, gaming y accesorios.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
+  "orientation": "portrait",
+  "lang": "es",
+  "categories": ["shopping", "lifestyle"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Ver ofertas", "url": "/productos?ofertas=1" },
+    { "name": "Mi carrito", "url": "/carrito" }
+  ]
+}

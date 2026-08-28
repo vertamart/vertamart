@@ -1,0 +1,20 @@
+{
+  "name": "vertamart-api-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create vertamart",
+    "db:migrate": "wrangler d1 migrations apply vertamart --remote",
+    "db:migrate:local": "wrangler d1 migrations apply vertamart --local"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "worker-mailer": "^1.2.1"
+  },
+  "devDependencies": {
+    "wrangler": "^3.112.0"
+  }
+}
