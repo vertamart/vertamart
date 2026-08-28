@@ -1,9 +1,10 @@
 name: Build Vertamart (Windows + Android)
 
-# Compila y publica las apps instalables (Windows .exe y Android .apk).
-# - Se ejecuta al crear un tag v* (ej. v1.1.0) o manualmente desde Actions.
-# - Los dos instaladores quedan en la Release del repositorio, descargables por cualquiera.
-# - Los runners de GitHub ya traen Node, Java y Android SDK: no hace falta empaquetarlo localmente.
+# Compila y publica el instalador de Windows (.exe) y el APK de Android.
+# - Al crear un tag v* (ej. v1.1.0) o manualmente (workflow_dispatch) se lanzan.
+# - Android y Windows se compilan en paralelo; al terminar se crea una Release
+#   descargable por cualquiera con ambos instaladores.
+# - Los runners de GitHub traen Node, Java y Android SDK (no hace falta local).
 
 on:
   workflow_dispatch:
@@ -15,72 +16,88 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  android:
+    name: Android APK
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
-      - name: Setup Java (Android)
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Enable Android SDK
-        uses: android-actions/setup-android@v3
-
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: android-actions/setup-android@v3
       - name: Install dependencies
         run: npm ci
-
-      - name: Build the web (API pública por defecto)
+      - name: Build the web
         run: npm run build
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
-
       - name: Generate app icons
         run: node build/generate-icons.cjs
-
-      # ---------- APK de Android (depurable, instalable en cualquier móvil) ----------
       - name: Sync Capacitor Android
         run: npx cap sync android
-
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug
+      - name: Prepare APK
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          cp android/app/build/outputs/apk/debug/app-debug.apk "Vertamart-v${VERSION}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vertamart-android
+          path: Vertamart-*.apk
+          if-no-files-found: error
 
-      # ---------- Instalador Windows (.exe) ----------
+  windows:
+    name: Windows installer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Wine (necesario para empaquetar Windows en Linux)
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine64 || sudo apt-get install -y --no-install-recommends wine
+      - name: Install dependencies
+        run: npm ci
+      - name: Build the web
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+      - name: Generate app icons
+        run: node build/generate-icons.cjs
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
-
-      - name: Prepare release files
+      - name: Prepare EXE
         run: |
-          VERSION=$(node -p "require('./package.json').build? (require('./package.json').version) : ''")
-          VERSION=${VERSION:-1.1.0}
-          cp android/app/build/outputs/apk/debug/app-debug.apk "Vertamart-v${VERSION}.apk"
-          cp .desktop-release/Vertamart-Setup-v${VERSION}.exe "Vertamart-Setup-v${VERSION}.exe" 2>/dev/null || true
-          ls -la Vertamart-* 2>/dev/null || true
-
-      - name: Upload artifacts (installable by anyone)
-        uses: actions/upload-artifact@v4
+          VERSION=$(node -p "require('./package.json').version")
+          cp ".desktop-release/Vertamart-Setup-v${VERSION}.exe" "Vertamart-Setup-v${VERSION}.exe"
+      - uses: actions/upload-artifact@v4
         with:
-          name: vertamart-apps
-          path: |
-            Vertamart-*.apk
-            Vertamart-*.exe
+          name: vertamart-windows
+          path: Vertamart-*.exe
+          if-no-files-found: error
 
+  release:
+    name: Publicar Release
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: List artifacts
+        run: find artifacts -type f -name 'Vertamart-*' | sort
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Vertamart ${{ github.ref_name }}
-          files: |
-            Vertamart-*.apk
-            Vertamart-*.exe
+          files: artifacts/**/Vertamart-*
           generate_release_notes: true
