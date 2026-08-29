@@ -2597,6 +2597,14 @@ const handlers = {
   // El backend calcula el PRECIO REAL desde la BD (nunca confía en el frontend)
   // y aplica el cupón de forma segura.
   async stripeCheckout(user, body, env) {
+    try {
+      return await this._stripeCheckoutInner(user, body, env)
+    } catch (err) {
+      return fail(500, `Error al crear la sesión de pago: ${err.message}`, 'STRIPE_ERROR')
+    }
+  },
+
+  async _stripeCheckoutInner(user, body, env) {
     const stripe = getStripe(env)
     if (!stripe) return fail(503, 'Stripe no está configurado aún', 'STRIPE_NOT_CONFIGURED')
     const rawItems = Array.isArray(body?.items) ? body.items : []
@@ -2654,6 +2662,8 @@ const handlers = {
       customer: customerId,
       client_reference_id: String(order.lastId),
       customer_email: customerId ? undefined : user.email,
+      // La tienda fija sus precios sin IVA automático: desactiva Managed Payments.
+      managed_payments: { enabled: false },
       line_items: [
         ...items.map((it) => ({ price_data: { currency, product_data: { name: it.name }, unit_amount: it.price }, quantity: it.qty })),
         ...(discount > 0 ? [{ price_data: { currency, product_data: { name: `Descuento ${couponCode}` }, unit_amount: -discount }, quantity: 1 }] : []),
@@ -3385,6 +3395,11 @@ const handlers = {
 
   // Migración puntual vía Worker (el CLI D1 tarda en exceso en este equipo).
   async ensureNewSchema() {
+    // Ya migrado: no repetimos las comprobaciones en cada petición.
+    try {
+      await db.run('SELECT transaction_id FROM orders LIMIT 0')
+      return
+    } catch { /* falta la columna: migramos */ }
     const cols = [
       ['reviews', 'image_url', 'TEXT'],
       ['reviews', 'verified', 'INTEGER NOT NULL DEFAULT 0'],
@@ -3393,6 +3408,9 @@ const handlers = {
       ['orders', 'refund_amount', 'INTEGER NOT NULL DEFAULT 0'],
       ['orders', 'refund_reason', 'TEXT'],
       ['orders', 'points_earned', 'INTEGER NOT NULL DEFAULT 0'],
+      ['orders', 'transaction_id', 'TEXT'],
+      ['orders', 'payment_status', 'TEXT'],
+      ['orders', 'payment_method', 'TEXT'],
       ['users', 'points', 'INTEGER NOT NULL DEFAULT 0'],
     ]
     const applied = []
@@ -3689,6 +3707,7 @@ export default {
 
     await seedAdmin()
     await ensureAdminSchema()
+    await handlers.ensureNewSchema()
 
     // Webhook de Stripe: necesita el cuerpo RAW para verificar la firma.
     if (path === '/api/webhooks/stripe' && request.method === 'POST') {
