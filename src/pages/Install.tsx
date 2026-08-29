@@ -10,7 +10,6 @@ export function Install() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
       <div className="rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-brand-950 p-8 text-white shadow-xl sm:p-12">
-        <span className="inline-flex rounded-full bg-brand-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-brand-300">{t('install.beta')}</span>
         <h1 className="mt-4 text-3xl font-extrabold tracking-tight sm:text-5xl">{t('install.title')}</h1>
         <p className="mt-4 max-w-2xl text-slate-300">{t('install.subtitle')}</p>
 
