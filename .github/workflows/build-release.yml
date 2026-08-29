@@ -1,10 +1,9 @@
-name: Build Vertamart (Windows + Android)
+name: Build Vertamart (Android APK)
 
-# Compila y publica el instalador de Windows (.exe) y el APK de Android.
-# - Al crear un tag v* (ej. v1.1.0) o manualmente (workflow_dispatch) se lanzan.
-# - Android y Windows se compilan en paralelo; al terminar se crea una Release
-#   descargable por cualquiera con ambos instaladores.
-# - Los runners de GitHub traen Node, Java y Android SDK (no hace falta local).
+# Compila el APK de Android en el runner de GitHub (trae Android SDK) y publica
+# una Release descargable por cualquiera.
+# - El instalador de Windows se sube aparte (se compila localmente en Windows).
+# - Se lanza al crear un tag v* o manualmente desde la pestaña Actions.
 
 on:
   workflow_dispatch:
@@ -38,66 +37,19 @@ jobs:
         run: node build/generate-icons.cjs
       - name: Sync Capacitor Android
         run: npx cap sync android
-      - name: Build debug APK
+      - name: Build debug APK (chmod gradlew)
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
       - name: Prepare APK
         run: |
           VERSION=$(node -p "require('./package.json').version")
           cp android/app/build/outputs/apk/debug/app-debug.apk "Vertamart-v${VERSION}.apk"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vertamart-android
-          path: Vertamart-*.apk
-          if-no-files-found: error
-
-  windows:
-    name: Windows installer
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Install Wine (necesario para empaquetar Windows en Linux)
-        run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine64 || sudo apt-get install -y --no-install-recommends wine
-      - name: Install dependencies
-        run: npm ci
-      - name: Build the web
-        run: npm run build
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-      - name: Generate app icons
-        run: node build/generate-icons.cjs
-      - name: Build Windows installer
-        run: npx electron-builder --win nsis --publish never
-      - name: Prepare EXE
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          cp ".desktop-release/Vertamart-Setup-v${VERSION}.exe" "Vertamart-Setup-v${VERSION}.exe"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vertamart-windows
-          path: Vertamart-*.exe
-          if-no-files-found: error
-
-  release:
-    name: Publicar Release
-    needs: [android, windows]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { path: artifacts }
-      - name: List artifacts
-        run: find artifacts -type f -name 'Vertamart-*' | sort
-      - name: Create GitHub Release
+      - name: Create GitHub Release (APK)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Vertamart ${{ github.ref_name }}
-          files: artifacts/**/Vertamart-*
+          files: Vertamart-*.apk
           generate_release_notes: true
