@@ -34,6 +34,21 @@ export function ProductDetail() {
   const [reviewErrors, setReviewErrors] = useState<Record<string, string>>({})
   const [savingReview, setSavingReview] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [versionHistory, setVersionHistory] = useState<{ version: string; notes: string; createdAt: string }[] | null>(null)
+  const [versionLoading, setVersionLoading] = useState(false)
+
+  useEffect(() => {
+    if (!product) return
+    setVersionHistory(null)
+    let cancelled = false
+    setVersionLoading(true)
+    storeService
+      .productVersions(product.id)
+      .then((r) => { if (!cancelled) setVersionHistory(r.items) })
+      .catch(() => { if (!cancelled) setVersionHistory([]) })
+      .finally(() => { if (!cancelled) setVersionLoading(false) })
+    return () => { cancelled = true }
+  }, [product?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const [claimingFree, setClaimingFree] = useState(false)
   const [freeClaimed, setFreeClaimed] = useState(false)
 
@@ -328,6 +343,29 @@ export function ProductDetail() {
               <ShieldCheck className="h-5 w-5 shrink-0 text-brand-600" />
               <p><strong>{product.license}.</strong> {product.support} incluido.</p>
             </div>
+          </div>
+
+          {/* Historial de versiones */}
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+              <RefreshCcw className="h-4 w-4 text-brand-600" /> Historial de versiones
+            </h3>
+            {versionLoading ? (
+              <p className="mt-2 text-xs text-slate-400">Cargando…</p>
+            ) : !versionHistory || versionHistory.length === 0 ? (
+              <p className="mt-2 text-xs text-slate-400">Versión actual {product.version ? `v${product.version}` : ''} — sin cambios registrados aún.</p>
+            ) : (
+              <ul className="mt-3 space-y-2 border-l-2 border-brand-100 pl-3">
+                {versionHistory.map((v) => (
+                  <li key={v.version + v.createdAt}>
+                    <p className="text-xs font-bold text-slate-700">
+                      v{v.version} <span className="font-normal text-slate-400">· {new Date(v.createdAt.replace(' ', 'T') + 'Z').toLocaleDateString('es-ES')}</span>
+                    </p>
+                    {v.notes ? <p className="mt-0.5 text-xs text-slate-500">{v.notes}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {/* Características */}

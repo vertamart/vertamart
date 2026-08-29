@@ -70,6 +70,16 @@ export function Account() {
   const [library, setLibrary] = useState<import('../api/services/store').LibraryItem[]>([])
   const [loadingLibrary, setLoadingLibrary] = useState(false)
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [versionLog, setVersionLog] = useState<{ productId: string; items: { version: string; notes: string; createdAt: string }[] } | null>(null)
+
+  const showVersionLog = async (item: import('../api/services/store').LibraryItem) => {
+    try {
+      const r = await storeService.productVersions(item.id)
+      setVersionLog({ productId: item.id, items: r.items })
+    } catch {
+      notify('No se pudo cargar el historial de versiones', 'info')
+    }
+  }
 
   useEffect(() => {
     if (!user) return
@@ -676,9 +686,31 @@ export function Account() {
                     </div>
                   </div>
                   {item.hasUpdate && (
-                    <p className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700">
-                      <Sparkles className="h-3.5 w-3.5" /> Nueva versión disponible (v{item.version})
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void showVersionLog(item)}
+                      className="mt-2 flex w-full items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-left text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 shrink-0" /> Nueva versión disponible (v{item.version}) — ver novedades
+                    </button>
+                  )}
+                  {versionLog && versionLog.productId === item.id && (
+                    <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="mb-1.5 text-xs font-bold text-slate-700">Historial de versiones</p>
+                      {versionLog.items.length === 0 ? (
+                        <p className="text-xs text-slate-400">Sin registros.</p>
+                      ) : (
+                        <ul className="space-y-1.5">
+                          {versionLog.items.map((v) => (
+                            <li key={v.version} className="text-xs text-slate-600">
+                              <span className="font-mono font-bold text-brand-700">v{v.version}</span>
+                              <span className="text-slate-400"> · {formatDate(v.createdAt)}</span>
+                              {v.notes ? <p className="mt-0.5 text-slate-500">{v.notes}</p> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   )}
                   {item.licenseKey && (
                     <button

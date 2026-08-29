@@ -163,6 +163,7 @@ export interface ProductInput {
   compatibility?: string
   license?: string
   version?: string
+  versionNotes?: string
 }
 
 export interface OrderInput {
@@ -299,7 +300,7 @@ export const storeService = {
   createProduct(input: ProductInput) {
     return apiFetch<StoredProduct>('/products', { method: 'POST', headers: authHeaders(), body: input })
   },
-  updateProduct(id: string, patch: Partial<ProductInput> & { status?: string; downloads?: number; updates?: string; support?: string; includes?: string[]; requirements?: string[]; version?: string }) {
+  updateProduct(id: string, patch: Partial<ProductInput> & { status?: string; downloads?: number; updates?: string; support?: string; includes?: string[]; requirements?: string[]; version?: string; versionNotes?: string }) {
     return apiFetch<StoredProduct>(`/products/${id}`, { method: 'PATCH', headers: authHeaders(), body: patch })
   },
   deleteProduct(id: string) {
@@ -337,6 +338,10 @@ export const storeService = {
       headers: authHeaders(),
       body: { productId },
     })
+  },
+  /** Historial de versiones de un producto (público). */
+  productVersions(productId: string) {
+    return apiFetch<{ currentVersion: string; items: { id: number; version: string; notes: string; createdAt: string }[] }>(`/products/${encodeURIComponent(productId)}/versions`)
   },
   /** Descarga un producto comprado (requiere sesión): devuelve el blob del archivo. */
   /** Devuelve el archivo real del producto y su nombre de fichero. */

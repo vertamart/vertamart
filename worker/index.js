@@ -511,6 +511,15 @@ async function ensureAdminSchema() {
     if (!prodCols.some((c) => c.name === 'version')) {
       await db.run(`ALTER TABLE products ADD COLUMN version TEXT NOT NULL DEFAULT '1.0.0'`)
     }
+    // Historial de versiones de cada producto (changelog visible para compradores)
+    await db.run(`CREATE TABLE IF NOT EXISTS product_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id TEXT NOT NULL,
+      version TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`)
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_product_versions_product ON product_versions (product_id, id)`)
     // Licencia única y versión comprada por cada ítem de pedido
     const oiCols = await db.all(`PRAGMA table_info(order_items)`)
     if (!oiCols.some((c) => c.name === 'license_key')) {
@@ -1778,8 +1787,32 @@ const handlers = {
     if (sets.length === 0) return fail(400, 'No hay campos para actualizar', 'EMPTY_UPDATE')
     values.push(row.id)
     await db.run(`UPDATE products SET ${sets.join(', ')} WHERE id = ?`, ...values)
+    // Historial de versiones: cada cambio de versión queda registrado con sus notas.
+    if (body?.version !== undefined && String(body.version).trim() !== String(row.version ?? '').trim()) {
+      await db.run(
+        'INSERT INTO product_versions (product_id, version, notes) VALUES (?, ?, ?)',
+        String(Math.trunc(Number(row.id))),
+        String(body.version).trim(),
+        String(body?.versionNotes ?? '').trim().slice(0, 2000) || null,
+      )
+    }
     const updated = await db.get('SELECT * FROM products WHERE id = ?', row.id)
     return json(productToApi(updated))
+  },
+
+  // Historial de versiones de un producto (visible para compradores y dueños).
+  async productVersions(user, id, env) {
+    const row = await db.get('SELECT * FROM products WHERE id = ?', id)
+    if (!row) return fail(404, 'Producto no encontrado', 'NOT_FOUND')
+    // Acceso: cualquier usuario autenticado puede ver el historial público del producto.
+    const rows = await db.all(
+      `SELECT id, version, notes, created_at FROM product_versions WHERE product_id = ? ORDER BY id DESC`,
+      String(Math.trunc(Number(row.id))),
+    )
+    return json({
+      currentVersion: row.version ?? '1.0.0',
+      items: rows.map((r) => ({ id: r.id, version: r.version, notes: r.notes ?? '', createdAt: r.created_at })),
+    })
   },
 
   async deleteProduct(user, id) {
@@ -3125,6 +3158,7 @@ const ROUTES = [
   ['DELETE', /^\/api\/admin\/categories\/(\d+)$/, (u, b, req, m) => handlers.adminDeleteCategory(Number(m[1])), true, true],
   ['POST', /^\/api\/payments\/paypal\/orders$/, (u, b, req, m, env) => handlers.paypalCreate(env, b), false, false],
   ['POST', /^\/api\/payments\/paypal\/orders\/([A-Z0-9-]+)\/capture$/, (u, b, req, m, env) => handlers.paypalCapture(env, m[1]), false, false],
+  ['GET', /^\/api\/products\/(\w+)\/versions$/, (u, b, req, m, env) => handlers.productVersions(u, m[1], env), false, false],
   ['GET', /^\/api\/products\/(\w+)\/reviews$/, (u, b, req, m) => handlers.getReviews(m[1]), false, false],
   ['POST', /^\/api\/products\/(\w+)\/reviews$/, (u, b, req, m) => handlers.addReview(u, m[1], b), true, false],
   ['DELETE', /^\/api\/products\/(\w+)\/reviews$/, (u, b, req, m) => handlers.deleteReview(u, m[1]), true, false],

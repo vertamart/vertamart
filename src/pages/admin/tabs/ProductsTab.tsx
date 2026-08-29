@@ -26,6 +26,7 @@ interface ProductForm {
   updates: string
   support: string
   version: string
+  versionNotes: string
   features: string
   includes: string
   requirements: string
@@ -35,7 +36,7 @@ const emptyForm = (category: string): ProductForm => ({
   name: '', description: '', category, price: '', oldPrice: '', stock: '10', image: '',
   badge: '', fileType: 'ZIP', fileSize: '10 MB', compatibility: 'Windows · macOS · Linux',
   license: 'Uso personal y comercial', updates: 'Actualizaciones de por vida', support: 'Soporte por correo',
-  version: '1.0.0', features: '', includes: '', requirements: '',
+  version: '1.0.0', versionNotes: '', features: '', includes: '', requirements: '',
 })
 
 export function ProductsTab({ initialCategory, stockTarget, onStockTargetHandled }: { initialCategory?: string; stockTarget?: { id: string; ts: number } | null; onStockTargetHandled?: () => void }) {
@@ -147,7 +148,7 @@ export function ProductsTab({ initialCategory, stockTarget, onStockTargetHandled
       price: String(Math.round(p.price * region.rate)), oldPrice: p.oldPrice ? String(Math.round(p.oldPrice * region.rate)) : '',
       stock: String(p.stock), image: p.image, badge: p.badge ?? '',
       fileType: p.fileType, fileSize: p.fileSize, compatibility: p.compatibility, license: p.license,
-      updates: p.updates, support: p.support, version: p.version ?? '1.0.0',
+      updates: p.updates, support: p.support, version: p.version ?? '1.0.0', versionNotes: '',
       features: p.features.join('\n'), includes: p.includes.join('\n'), requirements: p.requirements.join('\n'),
     })
     setFormError('')
@@ -180,6 +181,7 @@ export function ProductsTab({ initialCategory, stockTarget, onStockTargetHandled
       updates: form.updates.trim(),
       support: form.support.trim(),
       version: form.version.trim() || '1.0.0',
+      versionNotes: form.versionNotes.trim(),
       includes: form.includes.split('\n').map((s) => s.trim()).filter(Boolean),
       requirements: form.requirements.split('\n').map((s) => s.trim()).filter(Boolean),
     }
@@ -448,6 +450,7 @@ export function ProductsTab({ initialCategory, stockTarget, onStockTargetHandled
             <Field label="Formato"><input className={inputCls} value={form.fileType} onChange={(e) => setForm({ ...form, fileType: e.target.value })} /></Field>
             <Field label="Tamaño"><input className={inputCls} value={form.fileSize} onChange={(e) => setForm({ ...form, fileSize: e.target.value })} /></Field>
             <Field label="Versión"><input className={inputCls} value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} placeholder="1.0.0" /></Field>
+            <Field label="Notas de la versión (changelog)"><textarea className={textareaCls} rows={2} value={form.versionNotes} onChange={(e) => setForm({ ...form, versionNotes: e.target.value })} placeholder="Qué cambia en esta versión — visible para los compradores" /></Field>
             <Field label="Compatibilidad"><input className={inputCls} value={form.compatibility} onChange={(e) => setForm({ ...form, compatibility: e.target.value })} /></Field>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
