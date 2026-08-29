@@ -52,6 +52,8 @@ export interface CouponValidationResponse {
   valid: boolean
   code?: string
   percent?: number
+  type?: 'percent' | 'fixed'
+  value?: number
   min?: number
   reason?: string
 }

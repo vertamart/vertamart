@@ -110,10 +110,26 @@ export interface ModerationMessage {
 export interface PromoCode {
   id: number
   code: string
+  type: 'percent' | 'fixed'
   percent: number
+  value: number
   minAmount: number
+  startsAt: string | null
   expiresAt: string | null
+  maxUses: number | null
+  usedCount: number
   active: number
+  createdAt: string
+}
+
+export interface AdminCategory {
+  id: number
+  key: string
+  name: string
+  tagline: string | null
+  active: number
+  sortOrder: number
+  productCount: number
   createdAt: string
 }
 
@@ -167,6 +183,7 @@ export interface OrderInput {
   postalCode?: string
   estimatedDelivery?: string
   redeemPoints?: number
+  promoCode?: string
 }
 
 export interface Order {
@@ -277,7 +294,7 @@ export const storeService = {
   createProduct(input: ProductInput) {
     return apiFetch<StoredProduct>('/products', { method: 'POST', headers: authHeaders(), body: input })
   },
-  updateProduct(id: string, patch: Partial<ProductInput> & { status?: string }) {
+  updateProduct(id: string, patch: Partial<ProductInput> & { status?: string; downloads?: number; updates?: string; support?: string; includes?: string[]; requirements?: string[] }) {
     return apiFetch<StoredProduct>(`/products/${id}`, { method: 'PATCH', headers: authHeaders(), body: patch })
   },
   deleteProduct(id: string) {
@@ -442,11 +459,26 @@ export const storeService = {
   adminListPromoCodes() {
     return apiFetch<{ items: PromoCode[]; total: number }>('/admin/promo-codes', { headers: authHeaders() })
   },
-  adminCreatePromoCode(input: { code: string; percent: number; minAmount?: number; expiresAt?: string }) {
+  adminCreatePromoCode(input: { code: string; type?: 'percent' | 'fixed'; percent?: number; value?: number; minAmount?: number; startsAt?: string; expiresAt?: string; maxUses?: number }) {
     return apiFetch<PromoCode>('/admin/promo-codes', { method: 'POST', headers: authHeaders(), body: input })
+  },
+  adminUpdatePromoCode(id: number, input: Partial<{ code: string; type: 'percent' | 'fixed'; percent: number; value: number; minAmount: number; startsAt: string | null; expiresAt: string | null; maxUses: number | null; usedCount: number; active: number }>) {
+    return apiFetch<PromoCode>(`/admin/promo-codes/${id}`, { method: 'PATCH', headers: authHeaders(), body: input })
   },
   adminDeletePromoCode(id: number) {
     return apiFetch<void>(`/admin/promo-codes/${id}`, { method: 'DELETE', headers: authHeaders() })
+  },
+  adminListCategories() {
+    return apiFetch<{ items: AdminCategory[]; total: number }>('/admin/categories', { headers: authHeaders() })
+  },
+  adminCreateCategory(input: { key: string; name: string; tagline?: string; active?: boolean; sortOrder?: number }) {
+    return apiFetch<AdminCategory>('/admin/categories', { method: 'POST', headers: authHeaders(), body: input })
+  },
+  adminUpdateCategory(id: number, input: Partial<{ key: string; name: string; tagline: string | null; active: boolean; sortOrder: number }>) {
+    return apiFetch<AdminCategory>(`/admin/categories/${id}`, { method: 'PATCH', headers: authHeaders(), body: input })
+  },
+  adminDeleteCategory(id: number) {
+    return apiFetch<void>(`/admin/categories/${id}`, { method: 'DELETE', headers: authHeaders() })
   },
   adminUpdateDelivery(id: number, estimatedDelivery: string) {
     return apiFetch<{ id: number; estimatedDelivery: string }>(`/admin/orders/${id}/delivery`, { method: 'PATCH', headers: authHeaders(), body: { estimatedDelivery } })

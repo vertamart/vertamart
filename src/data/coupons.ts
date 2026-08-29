@@ -1,6 +1,8 @@
 export interface Coupon {
   code: string
   percent: number
+  type?: 'percent' | 'fixed'
+  value?: number
   min?: number
 }
 

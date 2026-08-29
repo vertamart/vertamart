@@ -75,7 +75,7 @@ class ApiCatalogRepository implements CatalogRepository {
   async getCoupon(code: string): Promise<Coupon | null> {
     const res = await couponsService.validate(code)
     if (!res.valid) return null
-    return { code: res.code ?? '', percent: res.percent ?? 0, min: res.min }
+    return { code: res.code ?? '', percent: res.percent ?? 0, type: res.type ?? 'percent', value: res.value ?? 0, min: res.min }
   }
 }
 

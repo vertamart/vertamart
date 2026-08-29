@@ -18,7 +18,7 @@ export function Cart() {
   const { region } = useRegion()
   const [couponInput, setCouponInput] = useState('')
   const [applying, setApplying] = useState(false)
-  const [coupon, setCoupon] = usePersistentState<{ code: string; percent: number } | null>('verta.coupon', null)
+  const [coupon, setCoupon] = usePersistentState<{ code: string; percent: number; type?: 'percent' | 'fixed'; value?: number } | null>('verta.coupon', null)
   const [couponError, setCouponError] = useState('')
   const navigate = useNavigate()
 
@@ -29,7 +29,11 @@ export function Cart() {
   const bundleItems = cart.filter((i) => i.bundle)
   const itemsCount = items.length + bundleItems.length
 
-  const discount = coupon ? Math.round(cartSubtotal * (coupon.percent / 100)) : 0
+  const discount = coupon
+    ? coupon.type === 'fixed'
+      ? Math.min(coupon.value ?? 0, cartSubtotal)
+      : Math.round(cartSubtotal * (coupon.percent / 100))
+    : 0
   const total = Math.max(0, cartSubtotal - discount)
 
   const applyCoupon = async (e: FormEvent) => {
@@ -46,9 +50,9 @@ export function Cart() {
         setCouponError(`Este cupón requiere una compra mínima de ${formatPrice(found.min, region)}`)
         return
       }
-      setCoupon({ code: found.code, percent: found.percent })
+      setCoupon({ code: found.code, percent: found.percent, type: found.type ?? 'percent', value: found.value ?? 0 })
       setCouponInput('')
-      notify(`Cupón ${found.code} aplicado: -${found.percent}%`)
+      notify(`Cupón ${found.code} aplicado` + (found.type === 'fixed' ? `: -${formatPrice(found.value ?? 0, region)}` : `: -${found.percent}%`))
     } finally {
       setApplying(false)
     }

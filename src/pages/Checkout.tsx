@@ -65,7 +65,7 @@ export function Checkout() {
   const { user } = useAuth()
   const [form, setForm] = useState<FormState>(initialForm)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
-  const [coupon] = usePersistentState<{ code: string; percent: number } | null>('verta.coupon', null)
+  const [coupon] = usePersistentState<{ code: string; percent: number; type?: 'percent' | 'fixed'; value?: number } | null>('verta.coupon', null)
   const [pointsAvailable, setPointsAvailable] = useState(0)
   const [redeemPoints, setRedeemPoints] = useState(0)
   const [orderId] = useState(() => `VT-${Math.floor(100000 + Math.random() * 900000)}`)
@@ -110,7 +110,11 @@ export function Checkout() {
   const regularSubtotal = allItems.reduce((sum, { product, qty }) => sum + product.price * qty, 0)
   // Lo que se ahorra por los bundles (regular - precio de pack).
   const bundleSavings = Math.max(0, regularSubtotal - cartSubtotal)
-  const discount = coupon ? Math.round(cartSubtotal * (coupon.percent / 100)) : 0
+  const discount = coupon
+    ? coupon.type === 'fixed'
+      ? Math.min(coupon.value ?? 0, cartSubtotal)
+      : Math.round(cartSubtotal * (coupon.percent / 100))
+    : 0
   const maxRedeem = Math.max(0, Math.min(pointsAvailable, cartSubtotal - discount))
   const pointsDiscount = Math.min(redeemPoints, maxRedeem)
   // Tienda 100% digital: sin gastos de envío.
@@ -270,6 +274,7 @@ export function Checkout() {
             customerName: form.nombre,
             customerEmail: form.email,
             redeemPoints: pointsDiscount,
+            promoCode: coupon?.code,
           })
           .then((saved) => {
             clearCart()

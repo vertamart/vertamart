@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { Globe, Heart, Menu, MessageCircle, Search, ShoppingCart, User, X } from 'lucide-react'
+import { Globe, Heart, LayoutDashboard, Menu, MessageCircle, Search, ShoppingCart, User, X } from 'lucide-react'
 import { storeService } from '../../api/services/store'
 import { useStore } from '../../context/StoreContext'
 import { useAuth } from '../../context/AuthContext'
@@ -51,10 +51,11 @@ export function Navbar() {
   }
 
   // Soporte solo necesita acceder al chat y a su perfil. Admin mantiene todos los enlaces.
+  // El botón Panel se inserta en la posición 4 para que siempre quepa en la barra de escritorio.
   const allLinks = user?.role === 'support'
     ? [{ to: '/chat', key: 'nav.chat' }, { to: `/vendedor/${user.id}`, key: 'nav.account' }]
     : user?.role === 'admin'
-      ? [...linkKeys, { to: '/panel', key: 'nav.panel' }]
+      ? [...linkKeys.slice(0, 4), { to: '/panel', key: 'nav.panel' }, ...linkKeys.slice(4)]
       : linkKeys
 
   const submit = (e: FormEvent) => {
@@ -160,12 +161,18 @@ export function Navbar() {
               <NavLink
                 to={l.to}
                 className={({ isActive }) =>
-                  cn(
-                    'rounded-lg px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors',
-                    isActive ? 'text-brand-700' : 'text-slate-600 hover:text-brand-700',
-                  )
+                  l.key === 'nav.panel'
+                    ? cn(
+                        'inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-bold text-white whitespace-nowrap shadow-sm transition-all hover:bg-brand-700',
+                        isActive && 'ring-2 ring-brand-300 ring-offset-1',
+                      )
+                    : cn(
+                        'rounded-lg px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors',
+                        isActive ? 'text-brand-700' : 'text-slate-600 hover:text-brand-700',
+                      )
                 }
               >
+                {l.key === 'nav.panel' && <LayoutDashboard className="h-3.5 w-3.5" />}
                 {t(l.key)}
               </NavLink>
             </li>
@@ -175,12 +182,18 @@ export function Navbar() {
               <NavLink
                 to={allLinks[7].to}
                 className={({ isActive }) =>
-                  cn(
-                    'rounded-lg px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors',
-                    isActive ? 'text-brand-700' : 'text-slate-600 hover:text-brand-700',
-                  )
+                  allLinks[7].key === 'nav.panel'
+                    ? cn(
+                        'inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-bold text-white whitespace-nowrap shadow-sm transition-all hover:bg-brand-700',
+                        isActive && 'ring-2 ring-brand-300 ring-offset-1',
+                      )
+                    : cn(
+                        'rounded-lg px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors',
+                        isActive ? 'text-brand-700' : 'text-slate-600 hover:text-brand-700',
+                      )
                 }
               >
+                {allLinks[7].key === 'nav.panel' && <LayoutDashboard className="h-3.5 w-3.5" />}
                 {t(allLinks[7].key)}
               </NavLink>
             </li>
@@ -309,29 +322,22 @@ export function Navbar() {
                     to={l.to}
                     onClick={() => setOpen(false)}
                     className={({ isActive }) =>
-                      cn(
-                        'block rounded-xl px-4 py-3 text-base font-medium',
-                        isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-700 hover:bg-slate-50',
-                      )
+                      l.key === 'nav.panel'
+                        ? cn(
+                            'mt-1 flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-3 text-base font-bold text-white shadow-sm',
+                            isActive && 'ring-2 ring-brand-300',
+                          )
+                        : cn(
+                            'block rounded-xl px-4 py-3 text-base font-medium',
+                            isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-700 hover:bg-slate-50',
+                          )
                     }
                   >
+                    {l.key === 'nav.panel' && <LayoutDashboard className="h-4 w-4" />}
                     {t(l.key)}
                   </NavLink>
                 </li>
               ))}
-              {user?.role === 'admin' && (
-                <li>
-                  <NavLink
-                    to="/panel"
-                    onClick={() => setOpen(false)}
-                    className={({ isActive }) =>
-                      cn('block rounded-xl px-4 py-3 text-base font-medium', isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-700 hover:bg-slate-50')
-                    }
-                  >
-                    {t('nav.panel')}
-                  </NavLink>
-                </li>
-              )}
             </ul>
             <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-3">
               <button

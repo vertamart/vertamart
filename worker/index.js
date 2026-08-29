@@ -470,10 +470,47 @@ async function feedPostToApi(row, viewerId) {
     commentsCount: commentsCount?.count ?? 0,
     createdAt: row.created_at,
   }
+}/* ---------------- esquema del panel: categorías y cupones ---------------- */
+let adminSchemaReady = false
+let adminSchemaPromise = null
+async function ensureAdminSchema() {
+  if (adminSchemaReady) return
+  adminSchemaPromise ??= (async () => {
+    await db.run(`CREATE TABLE IF NOT EXISTS categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      key TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      tagline TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`)
+    // Sembrar categorías del catálogo actual (si la tabla está vacía)
+    const existing = await db.get('SELECT COUNT(*) AS n FROM categories')
+    if ((existing?.n ?? 0) === 0) {
+      const rows = await db.all('SELECT DISTINCT category FROM products')
+      const label = { plantillas: 'Plantillas', presets: 'Presets', iconos: 'Iconos', fuentes: 'Fuentes', 'modelos-3d': 'Modelos 3D', plugins: 'Plugins', cursos: 'Cursos', packs: 'Packs', audio: 'Audio', wearables: 'Wearables', teclado: 'Teclados', mouse: 'Mouse', carga: 'Carga', monitor: 'Monitores', streaming: 'Streaming', oficina: 'Oficina', accesorios: 'Accesorios', general: 'General' }
+      for (const r of rows) {
+        const key = String(r.category).trim()
+        if (!key) continue
+        const pretty = label[key] ?? key.charAt(0).toUpperCase() + key.slice(1)
+        await db.run(`INSERT OR IGNORE INTO categories (key, name, tagline) VALUES (?, ?, ?)`, key, pretty, `Productos de ${pretty}`)
+      }
+    }
+    // Columnas extra de cupones
+    const promoCols = await db.all(`PRAGMA table_info(promo_codes)`)
+    const has = (name) => promoCols.some((c) => c.name === name)
+    if (!has('type')) await db.run(`ALTER TABLE promo_codes ADD COLUMN type TEXT NOT NULL DEFAULT 'percent'`)
+    if (!has('value')) await db.run(`ALTER TABLE promo_codes ADD COLUMN value INTEGER NOT NULL DEFAULT 0`)
+    if (!has('starts_at')) await db.run(`ALTER TABLE promo_codes ADD COLUMN starts_at TEXT`)
+    if (!has('max_uses')) await db.run(`ALTER TABLE promo_codes ADD COLUMN max_uses INTEGER`)
+    if (!has('used_count')) await db.run(`ALTER TABLE promo_codes ADD COLUMN used_count INTEGER NOT NULL DEFAULT 0`)
+    adminSchemaReady = true
+  })()
+  return adminSchemaPromise
 }
 
 /* ------------------------- seed admin (una vez) ------------------------- */
-
 let adminSeeded = false
 let adminSeedPromise = null
 async function seedAdmin() {
@@ -516,6 +553,23 @@ async function paypalRequest(env, path, options = {}) {
   const payload = await res.json().catch(() => null)
   if (!res.ok) throw new Error(payload?.message ?? 'PayPal rechazó la operación')
   return payload
+}
+
+function promoToApi(r) {
+  return {
+    id: r.id,
+    code: r.code,
+    type: r.type ?? 'percent',
+    percent: r.percent,
+    value: r.value ?? 0,
+    minAmount: r.min_amount,
+    startsAt: r.starts_at ?? null,
+    expiresAt: r.expires_at ?? null,
+    maxUses: r.max_uses ?? null,
+    usedCount: r.used_count ?? 0,
+    active: r.active,
+    createdAt: r.created_at,
+  }
 }
 
 const handlers = {
@@ -735,6 +789,8 @@ const handlers = {
 
   // PRODUCTOS
   async listCategories() {
+    const cats = await db.all(`SELECT key, name, tagline FROM categories WHERE active = 1 ORDER BY sort_order ASC, name ASC`)
+    if (cats.length > 0) return json(cats.map((c) => ({ id: c.key, name: c.name, tagline: c.tagline ?? `Productos de ${c.name}` })))
     const rows = await db.all(`SELECT category AS id, category AS name FROM products WHERE status = 'active' GROUP BY category ORDER BY category`)
     const labels = { audio: 'Audio', wearables: 'Wearables', teclado: 'Teclados', mouse: 'Mouse', carga: 'Carga', monitor: 'Monitores', streaming: 'Streaming', oficina: 'Oficina', accesorios: 'Accesorios' }
     return json(rows.map((row) => ({ id: row.id, name: labels[row.id] ?? row.name, tagline: `Productos de ${labels[row.id] ?? row.name}` })))
@@ -828,6 +884,26 @@ const handlers = {
     if (body?.features !== undefined) {
       sets.push('features = ?')
       values.push(JSON.stringify(body.features.map(String)))
+    }
+    // Campos digitales (formato, tamaño, licencia, descargas, soporte...)
+    const digitalMap = { fileType: 'file_type', fileSize: 'file_size', compatibility: 'compatibility', license: 'license', updates: 'updates', support: 'support' }
+    for (const [bodyKey, col] of Object.entries(digitalMap)) {
+      if (body?.[bodyKey] !== undefined) {
+        sets.push(`${col} = ?`)
+        values.push(String(body[bodyKey]).trim())
+      }
+    }
+    if (body?.downloads !== undefined) {
+      sets.push('downloads = ?')
+      values.push(Math.max(0, Number(body.downloads)))
+    }
+    if (body?.includes !== undefined) {
+      sets.push('includes = ?')
+      values.push(JSON.stringify(body.includes.map(String)))
+    }
+    if (body?.requirements !== undefined) {
+      sets.push('requirements = ?')
+      values.push(JSON.stringify(body.requirements.map(String)))
     }
     if (body?.status !== undefined) {
       if (!PRODUCT_STATUSES.includes(body.status)) return fail(400, 'Estado no válido', 'INVALID_STATUS')
@@ -1254,16 +1330,46 @@ const handlers = {
 
   // CUPONES ADMIN
   async adminPromoCodes() {
-    const rows = await db.all('SELECT id, code, percent, min_amount, expires_at, active, created_at FROM promo_codes ORDER BY id DESC')
-    return json({ items: rows.map((r) => ({ id: r.id, code: r.code, percent: r.percent, minAmount: r.min_amount, expiresAt: r.expires_at, active: r.active, createdAt: r.created_at })), total: rows.length })
+    const rows = await db.all('SELECT * FROM promo_codes ORDER BY id DESC')
+    return json({ items: rows.map(promoToApi), total: rows.length })
   },
   async adminCreatePromo(body) {
     const code = String(body?.code ?? '').trim().toUpperCase()
-    const percent = Number(body?.percent); const minAmount = Number(body?.minAmount ?? 0); const expiresAt = body?.expiresAt ? String(body.expiresAt) : null
+    const type = body?.type === 'fixed' ? 'fixed' : 'percent'
+    const percent = Math.max(1, Math.min(90, Number(body?.percent ?? 10)))
+    const value = Math.max(0, Number(body?.value ?? 0))
+    const minAmount = Math.max(0, Number(body?.minAmount ?? 0))
+    const startsAt = body?.startsAt ? String(body.startsAt) : null
+    const expiresAt = body?.expiresAt ? String(body.expiresAt) : null
+    const maxUses = body?.maxUses ? Math.max(1, Number(body.maxUses)) : null
     if (!/^[A-Z0-9_-]{3,30}$/.test(code)) return fail(400, 'Código inválido', 'INVALID_CODE')
-    if (!Number.isInteger(percent) || percent < 1 || percent > 90) return fail(400, 'Descuento entre 1 y 90%', 'INVALID_PERCENT')
+    if (type === 'fixed' && value <= 0) return fail(400, 'El descuento fijo debe ser mayor a 0', 'INVALID_VALUE')
+    if (startsAt && !/^\d{4}-\d{2}-\d{2}$/.test(startsAt)) return fail(400, 'Fecha de inicio inválida', 'INVALID_START')
     if (expiresAt && !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt)) return fail(400, 'Fecha de caducidad inválida', 'INVALID_EXPIRY')
-    try { const info = await db.run('INSERT INTO promo_codes (code, percent, min_amount, expires_at) VALUES (?, ?, ?, ?)', code, percent, minAmount, expiresAt); return json({ id: info.lastId, code, percent, minAmount, expiresAt, active: 1 }, 201) } catch { return fail(409, 'Ese código ya existe', 'CODE_TAKEN') }
+    try {
+      const info = await db.run('INSERT INTO promo_codes (code, type, percent, value, min_amount, starts_at, expires_at, max_uses) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', code, type, percent, value, minAmount, startsAt, expiresAt, maxUses)
+      return json(promoToApi({ id: info.lastId, code, type, percent, value, min_amount: minAmount, starts_at: startsAt, expires_at: expiresAt, max_uses: maxUses, used_count: 0, active: 1, created_at: new Date().toISOString() }), 201)
+    } catch { return fail(409, 'Ese código ya existe', 'CODE_TAKEN') }
+  },
+  async adminUpdatePromo(id, body) {
+    const row = await db.get('SELECT * FROM promo_codes WHERE id = ?', id)
+    if (!row) return fail(404, 'Código no encontrado', 'NOT_FOUND')
+    const sets = []; const values = []
+    if (body?.code !== undefined) { sets.push('code = ?'); values.push(String(body.code).trim().toUpperCase()) }
+    if (body?.type !== undefined) { sets.push('type = ?'); values.push(body.type === 'fixed' ? 'fixed' : 'percent') }
+    if (body?.percent !== undefined) { sets.push('percent = ?'); values.push(Math.max(0, Math.min(100, Number(body.percent)))) }
+    if (body?.value !== undefined) { sets.push('value = ?'); values.push(Math.max(0, Number(body.value))) }
+    if (body?.minAmount !== undefined) { sets.push('min_amount = ?'); values.push(Math.max(0, Number(body.minAmount))) }
+    if (body?.startsAt !== undefined) { sets.push('starts_at = ?'); values.push(body.startsAt ? String(body.startsAt) : null) }
+    if (body?.expiresAt !== undefined) { sets.push('expires_at = ?'); values.push(body.expiresAt ? String(body.expiresAt) : null) }
+    if (body?.maxUses !== undefined) { sets.push('max_uses = ?'); values.push(body.maxUses ? Math.max(1, Number(body.maxUses)) : null) }
+    if (body?.usedCount !== undefined) { sets.push('used_count = ?'); values.push(Math.max(0, Number(body.usedCount))) }
+    if (body?.active !== undefined) { sets.push('active = ?'); values.push(body.active ? 1 : 0) }
+    if (sets.length === 0) return fail(400, 'No hay campos para actualizar', 'EMPTY_UPDATE')
+    values.push(id)
+    try { await db.run(`UPDATE promo_codes SET ${sets.join(', ')} WHERE id = ?`, ...values) } catch { return fail(409, 'Ese código ya existe', 'CODE_TAKEN') }
+    const updated = await db.get('SELECT * FROM promo_codes WHERE id = ?', id)
+    return json(promoToApi(updated))
   },
   async adminDeletePromo(id) {
     const info = await db.run('DELETE FROM promo_codes WHERE id = ?', id)
@@ -1277,10 +1383,13 @@ const handlers = {
     if (!code) return json({ valid: false, reason: 'EMPTY' })
     const row = await db.get('SELECT * FROM promo_codes WHERE code = ?', code)
     if (!row || !row.active) return json({ valid: false, reason: 'NOT_FOUND' })
+    if (row.starts_at && new Date(`${row.starts_at}T00:00:00`) > new Date()) return json({ valid: false, reason: 'NOT_STARTED' })
     if (row.expires_at && new Date(`${row.expires_at}T23:59:59`) < new Date()) {
       return json({ valid: false, reason: 'EXPIRED' })
     }
-    return json({ valid: true, code: row.code, percent: row.percent, min: row.min_amount })
+    if (row.max_uses != null && (row.used_count ?? 0) >= row.max_uses) return json({ valid: false, reason: 'USED_UP' })
+    const type = row.type === 'fixed' ? 'fixed' : 'percent'
+    return json({ valid: true, code: row.code, type, percent: row.percent, value: row.value ?? 0, min: row.min_amount })
   },
 
   // RESEÑAS
@@ -1426,6 +1535,12 @@ const handlers = {
       'INSERT INTO payments (order_id, amount, method, transaction_id, installments, status) VALUES (?, ?, ?, ?, ?, ?)',
       order.lastId, total, method, transactionId, installments, paymentStatus,
     )
+
+    // Contador de usos del cupón (solo si el cupón tiene límite de usos)
+    if (body?.promoCode) {
+      const pc = String(body.promoCode).trim().toUpperCase()
+      if (pc) await db.run('UPDATE promo_codes SET used_count = used_count + 1 WHERE code = ? AND max_uses IS NOT NULL', pc)
+    }
 
     // Stock realista: decrementar por cada unidad pedida + alerta de stock bajo.
     for (const it of items) {
@@ -1991,6 +2106,45 @@ const handlers = {
     return json({ ok: true, sent })
   },
 
+  // CATEGORÍAS (panel admin)
+  async adminCategories() {
+    const rows = await db.all(`SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category = c.key) AS product_count FROM categories c ORDER BY c.sort_order ASC, c.name ASC`)
+    return json({ items: rows.map((r) => ({ id: r.id, key: r.key, name: r.name, tagline: r.tagline, active: r.active, sortOrder: r.sort_order, productCount: r.product_count, createdAt: r.created_at })), total: rows.length })
+  },
+  async adminCreateCategory(body) {
+    const key = String(body?.key ?? '').trim().toLowerCase().replace(/\s+/g, '-')
+    const name = String(body?.name ?? '').trim()
+    if (key.length < 2 || !name) return fail(400, 'La categoría necesita nombre y clave', 'INVALID_CATEGORY')
+    const tagline = body?.tagline ? String(body.tagline).trim() : null
+    const active = body?.active === false ? 0 : 1
+    const sortOrder = Math.max(0, Number(body?.sortOrder ?? 0))
+    try {
+      const info = await db.run('INSERT INTO categories (key, name, tagline, active, sort_order) VALUES (?, ?, ?, ?, ?)', key, name, tagline, active, sortOrder)
+      return json({ id: info.lastId, key, name, tagline, active, sortOrder, productCount: 0, createdAt: new Date().toISOString() }, 201)
+    } catch { return fail(409, 'Esa categoría ya existe', 'CATEGORY_TAKEN') }
+  },
+  async adminUpdateCategory(id, body) {
+    const row = await db.get('SELECT * FROM categories WHERE id = ?', id)
+    if (!row) return fail(404, 'Categoría no encontrada', 'NOT_FOUND')
+    const key = body?.key !== undefined ? String(body.key).trim().toLowerCase().replace(/\s+/g, '-') : row.key
+    const name = body?.name !== undefined ? String(body.name).trim() : row.name
+    const tagline = body?.tagline !== undefined ? (body.tagline ? String(body.tagline).trim() : null) : row.tagline
+    const active = body?.active !== undefined ? (body.active ? 1 : 0) : row.active
+    const sortOrder = body?.sortOrder !== undefined ? Math.max(0, Number(body.sortOrder)) : row.sort_order
+    try {
+      await db.run('UPDATE categories SET key = ?, name = ?, tagline = ?, active = ?, sort_order = ? WHERE id = ?', key, name, tagline, active, sortOrder, id)
+    } catch { return fail(409, 'Esa categoría ya existe', 'CATEGORY_TAKEN') }
+    return json({ id, key, name, tagline, active, sortOrder, productCount: 0, createdAt: row.created_at })
+  },
+  async adminDeleteCategory(id) {
+    const row = await db.get('SELECT * FROM categories WHERE id = ?', id)
+    if (!row) return fail(404, 'Categoría no encontrada', 'NOT_FOUND')
+    await db.run(`UPDATE products SET category = 'general' WHERE category = ?`, row.key)
+    await db.run(`INSERT OR IGNORE INTO categories (key, name, tagline) VALUES ('general', 'General', 'Productos generales')`)
+    await db.run('DELETE FROM categories WHERE id = ?', id)
+    return new Response(null, { status: 204 })
+  },
+
 }
 
 /* ------------------------------- router -------------------------------- */
@@ -2069,7 +2223,12 @@ const ROUTES = [
   ['POST', /^\/api\/admin\/orders\/(\d+)\/approve$/, (u, b, req, m, env) => handlers.adminApproveOrder(Number(m[1]), env), true, true],
   ['GET', /^\/api\/admin\/promo-codes$/, (u) => handlers.adminPromoCodes(), true, true],
   ['POST', /^\/api\/admin\/promo-codes$/, (u, b) => handlers.adminCreatePromo(b), true, true],
+  ['PATCH', /^\/api\/admin\/promo-codes\/(\d+)$/, (u, b, req, m) => handlers.adminUpdatePromo(Number(m[1]), b), true, true],
   ['DELETE', /^\/api\/admin\/promo-codes\/(\d+)$/, (u, b, req, m) => handlers.adminDeletePromo(Number(m[1])), true, true],
+  ['GET', /^\/api\/admin\/categories$/, (u) => handlers.adminCategories(), true, true],
+  ['POST', /^\/api\/admin\/categories$/, (u, b) => handlers.adminCreateCategory(b), true, true],
+  ['PATCH', /^\/api\/admin\/categories\/(\d+)$/, (u, b, req, m) => handlers.adminUpdateCategory(Number(m[1]), b), true, true],
+  ['DELETE', /^\/api\/admin\/categories\/(\d+)$/, (u, b, req, m) => handlers.adminDeleteCategory(Number(m[1])), true, true],
   ['POST', /^\/api\/payments\/paypal\/orders$/, (u, b, req, m, env) => handlers.paypalCreate(env, b), false, false],
   ['POST', /^\/api\/payments\/paypal\/orders\/([A-Z0-9-]+)\/capture$/, (u, b, req, m, env) => handlers.paypalCapture(env, m[1]), false, false],
   ['GET', /^\/api\/products\/(\w+)\/reviews$/, (u, b, req, m) => handlers.getReviews(m[1]), false, false],
@@ -2110,6 +2269,7 @@ export default {
     }
 
     await seedAdmin()
+    await ensureAdminSchema()
 
     const body = request.method === 'GET' || request.method === 'DELETE' ? undefined : await request.json().catch(() => undefined)
 
