@@ -2,21 +2,25 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --color-brand-50: #f0fdf4;
-  --color-brand-100: #dcfce7;
-  --color-brand-200: #bbf7d0;
-  --color-brand-300: #86efac;
-  --color-brand-400: #4ade80;
-  --color-brand-500: #22c55e;
-  --color-brand-600: #16a34a;
-  --color-brand-700: #15803d;
-  --color-brand-800: #166534;
-  --color-brand-900: #14532d;
-  --color-brand-950: #052e16;
+  /* Paleta refinada: verdes con mejor contraste y menos saturación en los tonos claros. */
+  --color-brand-50: #f0fdf5;
+  --color-brand-100: #dcfce9;
+  --color-brand-200: #b8f4cf;
+  --color-brand-300: #7ee8a8;
+  --color-brand-400: #3fd37e;
+  --color-brand-500: #16b95e;
+  --color-brand-600: #0d9b4e;
+  --color-brand-700: #0f7a40;
+  --color-brand-800: #116036;
+  --color-brand-900: #0e4f2e;
+  --color-brand-950: #052e1a;
 }
 
 html {
   scroll-behavior: smooth;
+  /* Guardia raíz contra el scroll horizontal: el contenido nunca puede
+     empujar el viewport, pero cada desbordamiento real se corrige en origen. */
+  overflow-x: clip;
 }
 
 body {
@@ -24,11 +28,72 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+/* Contenedor de página consistente en toda la app */
+.page-container {
+  width: 100%;
+  max-width: 88rem;
+  margin-inline: auto;
+  padding-inline: clamp(1rem, 3vw, 2rem);
+}
+
+/* Título de sección con escala fluida */
+.section-title {
+  font-size: clamp(1.5rem, 2.6vw, 2.25rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 800;
+}
+
+/* Sombra suave y elevación sutil para tarjetas premium */
+.card-elevated {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 8px 24px -6px rgba(15, 23, 42, 0.08),
+    0 16px 48px -12px rgba(15, 23, 42, 0.06);
+}
+.card-hover {
+  transition: transform 0.25s cubic-bezier(0.2, 0.6, 0.35, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 2px 4px rgba(15, 23, 42, 0.05),
+    0 16px 32px -8px rgba(13, 155, 78, 0.14),
+    0 24px 64px -16px rgba(15, 23, 42, 0.12);
+}
+
+/* Borde sutil tipo "glass" para paneles sobre fondos oscuros */
+.glass-dark {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
 }
 
 ::selection {
   background: var(--color-brand-200);
   color: var(--color-brand-950);
+}
+
+/* Enlaces y botones: feedback táctil suave */
+a, button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+img, svg, video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Evita que los inputs y botones hereden tamaños que rompan el layout */
+input, select, textarea, button {
+  font: inherit;
+}
+
+* {
+  min-width: 0;
 }
 
 ::-webkit-scrollbar {
@@ -49,12 +114,22 @@ body {
 @keyframes toastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pageIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes shimmer { 100% { transform: translateX(100%); } }
+@keyframes floatY { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes pulseSoft { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 
-.animate-fade-up { animation: fadeUp 0.5s cubic-bezier(0.2, 0.6, 0.35, 1) both; }
-.animate-fade-in { animation: fadeIn 0.4s ease both; }
-.animate-scale-in { animation: scaleIn 0.25s ease both; }
+.animate-fade-up { animation: fadeUp 0.55s cubic-bezier(0.2, 0.6, 0.35, 1) both; }
+.animate-fade-in { animation: fadeIn 0.45s ease both; }
+.animate-scale-in { animation: scaleIn 0.28s cubic-bezier(0.2, 0.6, 0.35, 1) both; }
 .animate-toast-in { animation: toastIn 0.3s ease both; }
-.animate-page-in { animation: pageIn 0.35s cubic-bezier(0.2, 0.6, 0.35, 1) both; }
+.animate-page-in { animation: pageIn 0.4s cubic-bezier(0.2, 0.6, 0.35, 1) both; }
+.animate-float { animation: floatY 6s ease-in-out infinite; }
+.animate-pulse-soft { animation: pulseSoft 3.5s ease-in-out infinite; }
+
+/* Retrasos de entrada en escalera para grids y listas (discreto) */
+.stagger-1 { animation-delay: 60ms; }
+.stagger-2 { animation-delay: 120ms; }
+.stagger-3 { animation-delay: 180ms; }
+.stagger-4 { animation-delay: 240ms; }
 
 .skeleton {
   @apply animate-pulse rounded-2xl bg-slate-200;

@@ -35,7 +35,7 @@ export function ProductCard({ product, className }: { product: Product; classNam
   }
 
   return (
-    <article className={cn('group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-200/70', className)}>
+    <article className={cn('card-hover card-elevated group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white', className)}>
       <Link to={`/producto/${product.slug}`} className="relative block aspect-square overflow-hidden bg-slate-50" aria-label={product.name}>
         <ProductImage src={product.image} fallback={product.category} name={product.name} className="transition-transform duration-500 group-hover:scale-105" />
         <div className="absolute left-3 top-3 flex flex-col gap-2">

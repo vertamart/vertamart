@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CreditCard, Download, FileArchive, Headphones, Rocket, ShieldCheck, Sparkles, Star, X } from 'lucide-react'
+import { ArrowRight, CreditCard, Download, FileArchive, Headphones, Rocket, ShieldCheck, Sparkles, Star, X, Zap } from 'lucide-react'
 import { useCatalog } from '../context/CatalogContext'
 import { CatalogError, CatalogSkeleton } from '../components/ui/CatalogState'
 import { ProductCard } from '../components/ui/ProductCard'
@@ -107,49 +107,96 @@ export function Home() {
 
       {/* HERO */}
       <section className="relative overflow-hidden bg-brand-950 text-white">
-        <div className="pointer-events-none absolute -top-24 -right-24 h-96 w-96 rounded-full bg-brand-500/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-brand-400/10 blur-3xl" />
-        <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
+        <div className="pointer-events-none absolute -top-28 -right-28 h-[26rem] w-[26rem] rounded-full bg-brand-500/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-36 -left-24 h-[24rem] w-[24rem] rounded-full bg-brand-400/10 blur-3xl" />
+        <div className="pointer-events-none absolute right-[8%] top-[12%] hidden h-40 w-40 rounded-full border border-brand-400/20 lg:block" />
+        <div className="page-container relative grid items-center gap-10 py-14 sm:py-16 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:py-20">
           <div className="animate-fade-up">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-brand-200 backdrop-blur">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400" /> {t('home.heroBadge')}
+            <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/25 bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-brand-200 backdrop-blur">
+              <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-brand-400" /> {t('home.heroBadge')}
             </span>
-            <h1 className="mt-5 text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
-              {t('home.heroTitle1')} <span className="text-brand-400">{t('home.heroTitle2')}</span>
+            <h1 className="mt-6 text-[clamp(2.25rem,5vw,3.75rem)] font-extrabold leading-[1.05] tracking-tight">
+              {t('home.heroTitle1')} <span className="bg-gradient-to-r from-brand-300 to-brand-500 bg-clip-text text-transparent">{t('home.heroTitle2')}</span>
             </h1>
-            <p className="mt-5 max-w-xl text-lg text-slate-300">
+            <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
               {t('home.heroSub')}
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link to="/productos" className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-7 py-3.5 text-base font-bold text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-400 hover:shadow-brand-400/40">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <Link to="/productos" className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-7 py-3.5 text-base font-bold text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-400 hover:shadow-brand-400/40">
                 {t('home.heroCta')} <ArrowRight className="h-5 w-5" />
               </Link>
-              <Link to="/categorias" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-7 py-3.5 text-base font-semibold text-white backdrop-blur transition-colors hover:bg-white/10">
+              <Link to="/categorias" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-7 py-3.5 text-base font-semibold text-white backdrop-blur transition-colors hover:bg-white/10">
                 {t('home.heroCta2')}
               </Link>
             </div>
-            <div className="mt-10 flex flex-wrap gap-6 text-sm text-slate-300">
+            <div className="mt-9 flex flex-wrap gap-x-7 gap-y-3 text-sm text-slate-300">
               <div className="flex items-center gap-2"><Download className="h-5 w-5 text-brand-400" /> {t('home.heroShip')}</div>
               <div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-brand-400" /> {t('home.heroWarranty')}</div>
               <div className="flex items-center gap-2"><Star className="h-5 w-5 text-brand-400" /> {t('home.heroRating')}</div>
             </div>
           </div>
-          <div className="animate-fade-in hidden lg:block">
-            <div className="relative mx-auto aspect-square max-w-md rounded-3xl bg-gradient-to-br from-brand-700 to-brand-950 p-2 shadow-2xl">
-              <div className="flex h-full w-full items-center justify-center rounded-2xl bg-brand-800/40">
-                <svg viewBox="0 0 24 24" className="h-40 w-40 text-brand-200" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
-                  <path d="M7 10h.01M12 8h.01M17 10h.01" opacity="0.6" />
-                </svg>
+
+          <div className="animate-fade-in relative mx-auto w-full max-w-md lg:max-w-none">
+            {/* Tarjeta premium con el producto destacado */}
+            <div className="card-elevated relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-brand-800/80 to-brand-950/90 p-2">
+              <div className="overflow-hidden rounded-2xl">
+                {featured[0] ? (
+                  <Link to={`/producto/${featured[0].slug}`} className="relative block">
+                    <div className="relative aspect-[4/3] w-full overflow-hidden">
+                      <ProductImage src={featured[0].image} fallback={featured[0].category} name={featured[0].name} eager />
+                      <div className="absolute inset-0 bg-gradient-to-t from-brand-950/70 via-transparent to-transparent" />
+                      <span className="absolute left-4 top-4 rounded-full bg-brand-500 px-3 py-1 text-xs font-extrabold text-white shadow">
+                        {t('home.heroFeaturedTag')}
+                      </span>
+                    </div>
+                    <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-5">
+                      <div className="min-w-0">
+                        <p className="truncate text-lg font-extrabold text-white">{featured[0].name}</p>
+                        <p className="flex items-center gap-1.5 text-xs text-brand-200">
+                          <Download className="h-3.5 w-3.5" /> {featured[0].fileType} · {featured[0].fileSize}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-xl bg-white/15 px-3.5 py-2 text-base font-extrabold text-white backdrop-blur">
+                        {formatPrice(featured[0].price, region)}
+                      </span>
+                    </div>
+                  </Link>
+                ) : (
+                  <div className="flex aspect-[4/3] w-full items-center justify-center bg-brand-800/40">
+                    <svg viewBox="0 0 24 24" className="h-32 w-32 text-brand-200" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                      <path d="M7 10h.01M12 8h.01M17 10h.01" opacity="0.6" />
+                    </svg>
+                  </div>
+                )}
               </div>
+            </div>
+
+            {/* Badge flotante: entrega instantánea */}
+            <div className="glass-dark animate-float absolute -left-3 bottom-8 hidden items-center gap-2.5 rounded-2xl px-4 py-3 text-sm font-semibold sm:flex">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-500 text-white">
+                <Zap className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block leading-tight text-white">{t('home.heroInstant')}</span>
+                <span className="block text-xs font-normal text-brand-200">{t('home.heroInstantSub')}</span>
+              </span>
+            </div>
+
+            {/* Badge flotante: valoración */}
+            <div className="glass-dark absolute -right-2 top-6 hidden items-center gap-2 rounded-2xl px-3.5 py-2.5 sm:flex">
+              <div className="flex gap-0.5 text-amber-400">
+                {Array.from({ length: 5 }).map((_, j) => <Star key={j} className="h-3.5 w-3.5 fill-current" />)}
+              </div>
+              <span className="text-xs font-bold text-white">4.9</span>
             </div>
           </div>
         </div>
       </section>
 
       {/* CATEGORÍAS */}
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6" aria-label={t('home.shopByCategory')}>
-        <div className="mb-8 flex items-end justify-between">
+      <section className="page-container py-16 sm:py-20" aria-label={t('home.shopByCategory')}>
+        <div className="mb-10 flex items-end justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-brand-600">{t('home.explore')}</p>
             <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{t('home.shopByCategory')}</h2>
@@ -176,8 +223,8 @@ export function Home() {
       </section>
 
       {/* DESTACADOS */}
-      <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6" aria-label={t('home.featured')}>
-        <div className="mb-8 flex items-end justify-between">
+      <section className="page-container pb-16 sm:pb-20" aria-label={t('home.featured')}>
+        <div className="mb-10 flex items-end justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-brand-600">{t('home.bestSellers')}</p>
             <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{t('home.featured')}</h2>
@@ -194,8 +241,8 @@ export function Home() {
       </section>
 
       {/* BUNDLES */}
-      <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6" aria-label="Verta Bundles">
-        <div className="mb-8 flex items-end justify-between">
+      <section className="page-container pb-16 sm:pb-20" aria-label="Verta Bundles">
+        <div className="mb-10 flex items-end justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-brand-600">Verta Bundles</p>
             <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{t('home.bundlesTitle')}</h2>
@@ -238,9 +285,9 @@ export function Home() {
 
       {/* GRATIS */}
       {freeProducts.length > 0 && (
-        <section className="bg-slate-100/70 py-14" aria-label="Productos gratuitos">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6">
-            <div className="mb-8 flex items-end justify-between">
+        <section className="bg-slate-100/70 py-16 sm:py-20" aria-label="Productos gratuitos">
+          <div className="page-container">
+            <div className="mb-10 flex items-end justify-between">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-wide text-green-600">Sin coste</p>
                 <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Productos gratuitos</h2>
@@ -259,8 +306,8 @@ export function Home() {
       )}
 
       {/* OFERTAS */}
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6" aria-label={t('home.onSale')}>
-        <div className="mb-8 flex items-end justify-between">
+      <section className="page-container py-16 sm:py-20" aria-label={t('home.onSale')}>
+        <div className="mb-10 flex items-end justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-red-500">{t('home.discounts')}</p>
             <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{t('home.onSale')}</h2>
@@ -278,9 +325,9 @@ export function Home() {
 
       {/* PREMIUM */}
       {premiumProducts.length > 0 && (
-        <section className="bg-slate-100/70 py-14" aria-label="Productos premium">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6">
-            <div className="mb-8 flex items-end justify-between">
+        <section className="bg-slate-100/70 py-16 sm:py-20" aria-label="Productos premium">
+          <div className="page-container">
+            <div className="mb-10 flex items-end justify-between">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-wide text-amber-600">Gama alta</p>
                 <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Productos premium</h2>
@@ -299,23 +346,23 @@ export function Home() {
       )}
 
       {/* VENTAJAS */}
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6" aria-label={t('home.advShip')}>
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="page-container py-16 sm:py-20" aria-label={t('home.advShip')}>
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {advantages.map((f, i) => (
-            <div key={i} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+            <div key={i} className="card-hover card-elevated rounded-2xl border border-slate-200 bg-white p-6">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-50 to-brand-100 text-brand-600 ring-1 ring-brand-100">
                 <f.icon className="h-6 w-6" />
               </div>
               <h3 className="font-bold text-slate-900">{f.title}</h3>
-              <p className="mt-1 text-sm text-slate-500">{f.text}</p>
+              <p className="mt-1 text-sm leading-relaxed text-slate-500">{f.text}</p>
             </div>
           ))}
         </div>
       </section>
 
       {/* BANNER PROMOCIONAL */}
-      <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-brand-700 to-brand-900 p-10 text-white sm:p-14">
+      <section className="page-container pb-16 sm:pb-20">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-800 to-brand-950 p-10 text-white sm:p-14">
           <div className="pointer-events-none absolute -right-10 -top-10 h-56 w-56 rounded-full bg-brand-400/20 blur-3xl" />
           <div className="relative flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
             <div>
@@ -331,15 +378,15 @@ export function Home() {
       </section>
 
       {/* OPINIONES */}
-      <section className="bg-slate-100/70 py-14" aria-label={t('home.reviewsTitle')}>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="mb-8 text-center">
+      <section className="bg-slate-100/70 py-16 sm:py-20" aria-label={t('home.reviewsTitle')}>
+        <div className="page-container">
+          <div className="mb-10 text-center">
             <p className="text-sm font-semibold uppercase tracking-wide text-brand-600">{t('home.reviewsEyebrow')}</p>
             <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{t('home.reviewsTitle')}</h2>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
             {reviews.map((r, i) => (
-              <div key={i} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div key={i} className="card-hover card-elevated rounded-2xl border border-slate-200 bg-white p-6">
                 <div className="flex gap-0.5 text-amber-400">
                   {Array.from({ length: r.rating }).map((_, j) => (
                     <Star key={j} className="h-4 w-4 fill-current" />
@@ -354,7 +401,7 @@ export function Home() {
       </section>
 
       {/* NEWSLETTER */}
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
+      <section className="page-container py-16 sm:py-20">
         <div className="mx-auto max-w-2xl text-center">
           {subscribed ? (
             <div className="animate-fade-up rounded-2xl border border-brand-200 bg-brand-50 p-8">

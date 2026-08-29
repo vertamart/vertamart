@@ -98,30 +98,70 @@ export function Navbar() {
     }
   }, [open])
 
+  const Logo = (
+    <Link to="/" className="flex shrink-0 items-center gap-2" aria-label="Vertamart">
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3c2 0 3.5 1 4.5 3l4 10-3-1-1.5-4H8l-1.5 4-3 1 4-10C8.5 4 10 3 12 3z" />
+        </svg>
+      </span>
+      <span className="text-xl font-extrabold tracking-tight text-slate-900">
+        Verta<span className="text-brand-600">mart</span>
+      </span>
+    </Link>
+  )
+
+  const SearchBox = ({ mobile = false }: { mobile?: boolean }) => (
+    <form onSubmit={submit} className={cn('relative', mobile ? 'w-full' : 'hidden w-40 min-w-0 flex-1 xl:block xl:max-w-[19rem]')} role="search">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setTimeout(() => setFocused(false), 150)}
+        placeholder={t('nav.search')}
+        aria-label={t('nav.search')}
+        aria-expanded={focused && suggested.length > 0}
+        className={cn(
+          'h-10 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none transition-all placeholder:text-slate-400 focus:border-brand-400 focus:bg-white',
+          mobile ? 'w-full' : 'w-full',
+        )}
+      />
+      {focused && suggested.length > 0 && (
+        <ul className="absolute left-0 right-0 top-12 z-50 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" role="listbox">
+          {suggested.map((s) => (
+            <li key={s.id} role="option">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { navigate(`/producto/${s.slug}`); setQuery(''); setSuggested([]); setFocused(false) }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-brand-50"
+              >
+                <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <span className="truncate font-medium text-slate-800">{s.name}</span>
+                <span className="ml-auto text-[10px] uppercase text-slate-400">{s.category}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </form>
+  )
+
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/90 backdrop-blur-md">
-      <nav className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6" aria-label={t('nav.home')}>
-        {/* Logo */}
-        <Link to="/" className="flex items-center gap-2" aria-label="Vertamart">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3c2 0 3.5 1 4.5 3l4 10-3-1-1.5-4H8l-1.5 4-3 1 4-10C8.5 4 10 3 12 3z" />
-            </svg>
-          </span>
-          <span className="text-xl font-extrabold tracking-tight text-slate-900">
-            Verta<span className="text-brand-600">mart</span>
-          </span>
-        </Link>
+      <nav className="page-container flex h-16 items-center gap-2 sm:gap-3 lg:gap-4" aria-label="Principal">
+        {Logo}
 
-        {/* Links de escritorio */}
-        <ul className="hidden items-center gap-1 lg:flex">
-          {allLinks.map((l) => (
-            <li key={l.to}>
+        {/* Navegación escritorio: solo a partir de xl para que nunca desborde en lg */}
+        <ul className="hidden min-w-0 items-center gap-0.5 xl:flex">
+          {allLinks.slice(0, 7).map((l) => (
+            <li key={l.to} className="shrink-0">
               <NavLink
                 to={l.to}
                 className={({ isActive }) =>
                   cn(
-                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'rounded-lg px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors',
                     isActive ? 'text-brand-700' : 'text-slate-600 hover:text-brand-700',
                   )
                 }
@@ -130,66 +170,53 @@ export function Navbar() {
               </NavLink>
             </li>
           ))}
+          {allLinks.length > 7 && (
+            <li className="shrink-0">
+              <NavLink
+                to={allLinks[7].to}
+                className={({ isActive }) =>
+                  cn(
+                    'rounded-lg px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors',
+                    isActive ? 'text-brand-700' : 'text-slate-600 hover:text-brand-700',
+                  )
+                }
+              >
+                {t(allLinks[7].key)}
+              </NavLink>
+            </li>
+          )}
         </ul>
 
-        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-          {/* Buscador (escritorio/tablet) */}
-          {user?.role !== 'support' && <form onSubmit={submit} className="relative hidden md:block" role="search">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setTimeout(() => setFocused(false), 150)}
-              placeholder={t('nav.search')}
-              aria-label={t('nav.search')}
-              aria-expanded={focused && suggested.length > 0}
-              className="h-10 w-44 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none transition-all placeholder:text-slate-400 focus:w-64 focus:border-brand-400 focus:bg-white"
-            />
-            {focused && suggested.length > 0 && (
-              <ul className="absolute left-0 right-0 top-12 z-50 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" role="listbox">
-                {suggested.map((s) => (
-                  <li key={s.id} role="option">
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => { navigate(`/producto/${s.slug}`); setQuery(''); setSuggested([]); setFocused(false) }}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-brand-50"
-                    >
-                      <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      <span className="truncate font-medium text-slate-800">{s.name}</span>
-                      <span className="ml-auto text-[10px] uppercase text-slate-400">{s.category}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </form>}
+        <div className="ml-auto flex min-w-0 items-center justify-end gap-0.5 sm:gap-1.5">
+          {/* Buscador escritorio */}
+          {user?.role !== 'support' && <SearchBox />}
 
-          {/* Buscar móvil */}
-          {user?.role !== 'support' && <button
-            onClick={() => setOpen(true)}
-            className="rounded-xl p-2 text-slate-600 hover:bg-brand-50 hover:text-brand-700 md:hidden"
-            aria-label={t('nav.search')}
-          >
-            <Search className="h-5 w-5" />
-          </button>}
+          {/* Buscar móvil/tablet: icono que abre el panel */}
+          {user?.role !== 'support' && (
+            <button
+              onClick={() => setOpen(true)}
+              className="rounded-xl p-2 text-slate-600 hover:bg-brand-50 hover:text-brand-700 xl:hidden"
+              aria-label={t('nav.search')}
+            >
+              <Search className="h-5 w-5" />
+            </button>
+          )}
 
           {/* Selector de idioma */}
           <button
             onClick={() => setLang(lang === 'es' ? 'en' : 'es')}
-            className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-bold text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
+            className="flex shrink-0 items-center gap-1.5 rounded-xl px-2 py-2 text-sm font-bold text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
             aria-label={t('nav.lang')}
             title={t('nav.lang')}
           >
             <Globe className="h-4 w-4" />
-            <span className="uppercase">{lang}</span>
+            <span className="hidden uppercase sm:inline">{lang}</span>
           </button>
 
           {user && (
             <Link
               to="/chat"
-              className="relative rounded-xl p-2 text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
+              className="relative shrink-0 rounded-xl p-2 text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
               aria-label={t('nav.chat')}
             >
               <MessageCircle className="h-5 w-5" />
@@ -201,34 +228,38 @@ export function Navbar() {
             </Link>
           )}
 
-          {user?.role !== 'support' && <Link
-            to="/favoritos"
-            className="relative rounded-xl p-2 text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
-            aria-label={t('nav.favorites')}
-          >
-            <Heart className="h-5 w-5" />
-            {favorites.length > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                {favorites.length}
-              </span>
-            )}
-          </Link>}
+          {user?.role !== 'support' && (
+            <Link
+              to="/favoritos"
+              className="relative hidden shrink-0 rounded-xl p-2 text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 sm:inline-flex"
+              aria-label={t('nav.favorites')}
+            >
+              <Heart className="h-5 w-5" />
+              {favorites.length > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                  {favorites.length}
+                </span>
+              )}
+            </Link>
+          )}
 
-          {user?.role !== 'support' && <Link
-            to="/carrito"
-            className="relative rounded-xl p-2 text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
-            aria-label={t('nav.cart')}
-          >
-            <ShoppingCart className="h-5 w-5" />
-            {cartCount > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white">
-                {cartCount}
-              </span>
-            )}
-          </Link>}
+          {user?.role !== 'support' && (
+            <Link
+              to="/carrito"
+              className="relative shrink-0 rounded-xl p-2 text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
+              aria-label={t('nav.cart')}
+            >
+              <ShoppingCart className="h-5 w-5" />
+              {cartCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white">
+                  {cartCount}
+                </span>
+              )}
+            </Link>
+          )}
 
           {user ? (
-            <div className="hidden items-center gap-2 sm:flex">
+            <div className="hidden shrink-0 items-center gap-1.5 md:flex">
               <Link
                 to={user.role === 'support' ? `/vendedor/${user.id}` : '/cuenta'}
                 title={`${user.name} · ${user.email}`}
@@ -237,27 +268,20 @@ export function Navbar() {
               >
                 {user.name.charAt(0).toUpperCase()}
               </Link>
-              <button
-                onClick={handleLogout}
-                className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
-                aria-label={t('nav.logout')}
-              >
-                {t('nav.logout')}
-              </button>
             </div>
           ) : (
             <Link
               to="/login"
-              className="hidden items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 sm:inline-flex"
+              className="hidden shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 md:inline-flex"
             >
               <User className="h-4 w-4" />
-              {t('nav.login')}
+              <span className="whitespace-nowrap">{t('nav.login')}</span>
             </Link>
           )}
 
           <button
             onClick={() => setOpen((v) => !v)}
-            className="rounded-xl p-2 text-slate-600 hover:bg-brand-50 hover:text-brand-700 lg:hidden"
+            className="shrink-0 rounded-xl p-2 text-slate-600 hover:bg-brand-50 hover:text-brand-700 xl:hidden"
             aria-label={open ? t('nav.closeSession') : t('nav.home')}
             aria-expanded={open}
           >
@@ -266,24 +290,19 @@ export function Navbar() {
         </div>
       </nav>
 
-      {/* Panel móvil */}
+      {/* Panel móvil / tablet (hasta xl) */}
       {open && (
-        <div className="fixed inset-0 top-16 z-50 bg-slate-950/50 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 top-16 z-50 bg-slate-950/50 backdrop-blur-sm xl:hidden" onClick={() => setOpen(false)}>
           <div
-            className="animate-fade-in mx-4 my-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+            className="animate-scale-in mx-auto my-4 max-h-[calc(100vh-6rem)] w-[min(94vw,30rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {user?.role !== 'support' && <form onSubmit={submit} className="relative mb-4 md:hidden" role="search">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t('nav.search')}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:bg-white"
-              />
-            </form>}
-            <ul className="flex flex-col gap-1">
+            {user?.role !== 'support' && (
+              <div className="mb-4">
+                <SearchBox mobile />
+              </div>
+            )}
+            <ul className="flex flex-col gap-0.5">
               {allLinks.map((l) => (
                 <li key={l.to}>
                   <NavLink
@@ -300,33 +319,59 @@ export function Navbar() {
                   </NavLink>
                 </li>
               ))}
-              {user ? (
-                <li className="border-t border-slate-100 pt-1">
-                  <div className="flex items-center justify-between rounded-xl px-4 py-3">
-                    <Link to={user.role === 'support' ? `/vendedor/${user.id}` : '/cuenta'} onClick={() => setOpen(false)} className="flex min-w-0 items-center gap-2 text-base font-semibold text-slate-700">
-                      <User className="h-5 w-5 shrink-0 text-brand-600" />
-                      <span className="truncate">{user.name}</span>
-                    </Link>
-                    <button
-                      onClick={() => { setOpen(false); void handleLogout() }}
-                      className="shrink-0 text-sm font-semibold text-brand-700 hover:underline"
-                    >
-                      {t('nav.logout')}
-                    </button>
-                  </div>
-                </li>
-              ) : (
-                <li className="border-t border-slate-100 pt-1">
+              {user?.role === 'admin' && (
+                <li>
                   <NavLink
-                    to="/login"
+                    to="/panel"
                     onClick={() => setOpen(false)}
-                    className="flex items-center gap-2 rounded-xl px-4 py-3 text-base font-semibold text-brand-700 hover:bg-brand-50"
+                    className={({ isActive }) =>
+                      cn('block rounded-xl px-4 py-3 text-base font-medium', isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-700 hover:bg-slate-50')
+                    }
                   >
-                    <User className="h-5 w-5" /> {t('nav.login')}
+                    {t('nav.panel')}
                   </NavLink>
                 </li>
               )}
             </ul>
+            <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-3">
+              <button
+                onClick={() => setLang(lang === 'es' ? 'en' : 'es')}
+                className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Globe className="h-4 w-4 text-brand-600" /> {lang === 'es' ? 'Español (ES)' : 'English (EN)'}
+              </button>
+              {user ? (
+                <button
+                  onClick={() => { setOpen(false); void handleLogout() }}
+                  className="rounded-xl px-3 py-2.5 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+                >
+                  {t('nav.logout')}
+                </button>
+              ) : null}
+            </div>
+            {user ? (
+              <Link
+                to={user.role === 'support' ? `/vendedor/${user.id}` : '/cuenta'}
+                onClick={() => setOpen(false)}
+                className="mt-2 flex items-center gap-3 rounded-xl bg-brand-50 p-3"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
+                  {user.name.charAt(0).toUpperCase()}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-bold text-slate-800">{user.name}</span>
+                  <span className="block truncate text-xs text-slate-500">{user.email}</span>
+                </span>
+              </Link>
+            ) : (
+              <NavLink
+                to="/login"
+                onClick={() => setOpen(false)}
+                className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-base font-semibold text-white hover:bg-slate-800"
+              >
+                <User className="h-5 w-5" /> {t('nav.login')}
+              </NavLink>
+            )}
           </div>
         </div>
       )}
