@@ -333,6 +333,14 @@ function randomToken() {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+// Bloque de 4 caracteres para licencias VERTA-XXXX-XXXX-XXXX
+function rand4() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const bytes = new Uint8Array(4)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => chars[b % chars.length]).join('')
+}
+
 function slugify(text) {
   return text
     .toLowerCase()
@@ -393,6 +401,7 @@ function productToApi(row, ownerVerified = false) {
     image: row.image,
     images: safeJson(row.images, row.image ? [row.image] : []),
     productCode: row.product_code ?? null,
+    version: row.version ?? '1.0.0',
     createdAt: row.created_at,
     status: row.status,
     ownerId: row.owner_id ?? null,
@@ -497,6 +506,19 @@ async function ensureAdminSchema() {
         await db.run(`INSERT OR IGNORE INTO categories (key, name, tagline) VALUES (?, ?, ?)`, key, pretty, `Productos de ${pretty}`)
       }
     }
+    // Columna de versión en productos (sistema de actualizaciones)
+    const prodCols = await db.all(`PRAGMA table_info(products)`)
+    if (!prodCols.some((c) => c.name === 'version')) {
+      await db.run(`ALTER TABLE products ADD COLUMN version TEXT NOT NULL DEFAULT '1.0.0'`)
+    }
+    // Licencia única y versión comprada por cada ítem de pedido
+    const oiCols = await db.all(`PRAGMA table_info(order_items)`)
+    if (!oiCols.some((c) => c.name === 'license_key')) {
+      await db.run(`ALTER TABLE order_items ADD COLUMN license_key TEXT`)
+    }
+    if (!oiCols.some((c) => c.name === 'version_at_purchase')) {
+      await db.run(`ALTER TABLE order_items ADD COLUMN version_at_purchase TEXT`)
+    }
     // Columnas extra de cupones
     const promoCols = await db.all(`PRAGMA table_info(promo_codes)`)
     const has = (name) => promoCols.some((c) => c.name === name)
@@ -553,6 +575,848 @@ async function paypalRequest(env, path, options = {}) {
   const payload = await res.json().catch(() => null)
   if (!res.ok) throw new Error(payload?.message ?? 'PayPal rechazó la operación')
   return payload
+}
+
+/* ==========================================================================
+   GENERADORES DE ARCHIVOS REALES PARA PRODUCTOS DIGITALES
+   Cada producto comprado descarga un archivo real y utilizable, generado
+   desde los metadatos del producto según su categoría:
+   plantillas→HTML · presets→XMP · iconos→SVG · fuentes→TTF · modelos-3D→OBJ
+   plugins→tema VS Code / plugin Figma / paquete npm · cursos→PDF+HTML
+   packs→recursos+manifest. Se entrega en ZIP salvo indicación contraria.
+   ========================================================================== */
+function text(s) { return new TextEncoder().encode(s) }
+
+function concatBytes(arrs) {
+  const total = arrs.reduce((s, a) => s + a.length, 0)
+  const out = new Uint8Array(total)
+  let p = 0
+  for (const a of arrs) { out.set(a, p); p += a.length }
+  return out
+}
+
+/* ------------------------------- ZIP (store) ---------------------------- */
+const crcTable = (() => {
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0 }
+  return t
+})()
+function crc32(buf) { let crc = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) crc = crcTable[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8); return (crc ^ 0xFFFFFFFF) >>> 0 }
+
+function zipStore(files) {
+  const enc = new TextEncoder()
+  const now = new Date()
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF
+  const chunks = []
+  const central = []
+  let offset = 0
+  for (const f of files) {
+    const nameBytes = enc.encode(f.name)
+    const data = f.data
+    const crc = crc32(data)
+    const local = new Uint8Array(30 + nameBytes.length)
+    const dv = new DataView(local.buffer)
+    dv.setUint32(0, 0x04034B50, true); dv.setUint16(4, 20, true); dv.setUint16(6, 0x0800, true)
+    dv.setUint16(8, 0, true); dv.setUint16(10, dosTime, true); dv.setUint16(12, dosDate, true)
+    dv.setUint32(14, crc, true); dv.setUint32(18, data.length, true); dv.setUint32(22, data.length, true)
+    dv.setUint16(26, nameBytes.length, true)
+    local.set(nameBytes, 30)
+    chunks.push(local, data)
+    central.push({ nameBytes, crc, size: data.length, offset })
+    offset += local.length + data.length
+  }
+  const cdStart = offset
+  for (const c of central) {
+    const cd = new Uint8Array(46 + c.nameBytes.length)
+    const dv = new DataView(cd.buffer)
+    dv.setUint32(0, 0x02014B50, true); dv.setUint16(4, 20, true); dv.setUint16(6, 20, true)
+    dv.setUint16(8, 0x0800, true); dv.setUint16(10, 0, true); dv.setUint16(12, dosTime, true); dv.setUint16(14, dosDate, true)
+    dv.setUint32(16, c.crc, true); dv.setUint32(20, c.size, true); dv.setUint32(24, c.size, true)
+    dv.setUint16(28, c.nameBytes.length, true); dv.setUint32(42, c.offset, true)
+    cd.set(c.nameBytes, 46)
+    chunks.push(cd)
+    offset += cd.length
+  }
+  const eocd = new Uint8Array(22)
+  const dv = new DataView(eocd.buffer)
+  dv.setUint32(0, 0x06054B50, true); dv.setUint16(8, central.length, true); dv.setUint16(10, central.length, true)
+  dv.setUint32(12, offset - cdStart, true); dv.setUint32(16, cdStart, true)
+  chunks.push(eocd)
+  return concatBytes(chunks)
+}
+
+/* ------------------------------- PDF ------------------------------------ */
+function buildPdf(title, lines) {
+  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+  const content = [
+    `BT /F1 16 Tf 60 800 Td (${esc(title)}) Tj ET`,
+    ...lines.map((l, i) => `BT /F1 11 Tf 60 ${770 - i * 17} Td (${esc(l)}) Tj ET`),
+  ].join('\n')
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ]
+  let out = '%PDF-1.4\n'
+  const offsets = []
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n` })
+  const xrefStart = out.length
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`
+  offsets.forEach((off) => { out += `${String(off).padStart(10, '0')} 00000 n \n` })
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`
+  return text(out)
+}
+
+/* ------------------------------- WAV ------------------------------------ */
+function buildWav(seconds = 3) {
+  const rate = 22050
+  const samples = rate * seconds
+  const dataSize = samples * 2
+  const buf = new Uint8Array(44 + dataSize)
+  const dv = new DataView(buf.buffer)
+  const w = (off, str) => { for (let i = 0; i < str.length; i++) buf[off + i] = str.charCodeAt(i) }
+  w(0, 'RIFF'); dv.setUint32(4, 36 + dataSize, true); w(8, 'WAVE')
+  w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true)
+  dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true)
+  w(36, 'data'); dv.setUint32(40, dataSize, true)
+  for (let i = 0; i < samples; i++) {
+    const t = i / rate
+    const env = 1 - i / samples
+    const v = Math.round(10000 * env * (0.5 * Math.sin(2 * Math.PI * 440 * t) + 0.25 * Math.sin(2 * Math.PI * 660 * t) + 0.125 * Math.sin(2 * Math.PI * 880 * t)))
+    dv.setInt16(44 + i * 2, v, true)
+  }
+  return buf
+}
+
+/* ------------------------------- XMP (Lightroom) ------------------------ */
+function buildXmp(name) {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+    crs:Version="12.0"
+    crs:Name="${name}"
+    crs:PresetType="Normal"
+    crs:UUID="${crypto.randomUUID()}"
+    crs:WhiteBalance="As Shot"
+    crs:Temperature="5200"
+    crs:Tint="+5"
+    crs:Exposure2012="+0.35"
+    crs:Contrast2012="+15"
+    crs:Highlights2012="-25"
+    crs:Shadows2012="+20"
+    crs:Whites2012="+10"
+    crs:Blacks2012="-10"
+    crs:Clarity2012="+12"
+    crs:Dehaze="+8"
+    crs:Saturation="-5"
+    crs:Vibrance="+20"
+    crs:HueAdjustmentGreen="+15"/>
+ </rdf:RDF>
+</x:xmpmeta>`
+  return text(xml)
+}
+
+/* ------------------------------- OBJ + MTL ------------------------------ */
+function buildObj() {
+  const v = []
+  const f = []
+  let vi = 1
+  const box = (cx, cy, cz, sx, sy, sz) => {
+    const hx = sx / 2, hy = sy / 2, hz = sz / 2
+    const pts = [
+      [cx - hx, cy - hy, cz - hz], [cx + hx, cy - hy, cz - hz], [cx + hx, cy + hy, cz - hz], [cx - hx, cy + hy, cz - hz],
+      [cx - hx, cy - hy, cz + hz], [cx + hx, cy - hy, cz + hz], [cx + hx, cy + hy, cz + hz], [cx - hx, cy + hy, cz + hz],
+    ]
+    const base = vi
+    pts.forEach((p) => v.push(`v ${p[0].toFixed(3)} ${p[1].toFixed(3)} ${p[2].toFixed(3)}`))
+    ;[[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [1, 2, 6, 5], [0, 4, 7, 3]].forEach((q) => f.push(`f ${q.map((i) => base + i).join(' ')}`))
+    vi += 8
+  }
+  box(0, 0.15, 0, 1.6, 0.3, 1.6)
+  box(0, 0.85, 0, 0.8, 1.1, 0.8)
+  box(0, 1.7, 0, 1.2, 0.6, 1.2)
+  box(-0.7, 1.3, 0, 0.5, 0.9, 0.5)
+  box(0.7, 1.3, 0, 0.5, 0.9, 0.5)
+  const obj = `# Vertamart — modelo 3D de demostración (OBJ válido)\n# Importa en Blender: File → Import → Wavefront (.obj)\n# o en: Maya, Cinema 4D, Unreal, Unity…\n${v.join('\n')}\n\n${f.join('\n')}\n`
+  const mtl = `newmtl verta_green\nKa 0.1 0.2 0.1\nKd 0.2 0.6 0.35\nKs 0.4 0.6 0.5\nNs 30\n`
+  return { obj, mtl }
+}
+
+/* ------------------------------- ICONOS SVG ------------------------------ */
+const ICON_PATHS = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+  heart: '<path d="M12 20s-7-4.4-9.3-8.6C1 8 2.7 5 5.8 5c2 0 3.4 1.1 4.2 2.4h4c.8-1.3 2.2-2.4 4.2-2.4 3.1 0 4.8 3 3.1 6.4C19 15.6 12 20 12 20z"/>',
+  arrow: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
+  check: '<path d="m4 12 5 5L20 6"/>',
+  x: '<path d="M6 6l12 12"/><path d="M18 6 6 18"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/>',
+  cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 3h3l2.5 12h10L21 7H6"/>',
+  bell: '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M10 21a2 2 0 0 0 4 0"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="14" r="3.5"/>',
+  download: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+  folder: '<path d="M3 6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  play: '<path d="M7 4.5v15l13-7.5z"/>',
+  zap: '<path d="M13 2 4 14h6l-1 8 9-12h-6z"/>',
+  grid: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
+}
+function makeSvgIcon(name, color = '#16a34a') {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name] ?? ICON_PATHS.star}</svg>`
+}
+function iconPreviewHtml(p, icons) {
+  const items = icons.map((n) => `<div class="i">${makeSvgIcon(n)}<p>${n}.svg</p></div>`).join('')
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${p.name} — Preview</title><style>body{font-family:system-ui;background:#0b1220;color:#e2e8f0;margin:0;padding:40px}h1{font-size:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:16px;margin-top:24px}.i{background:#111a2e;border:1px solid #1e293b;border-radius:14px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:10px}.i p{font-size:11px;color:#64748b;margin:0}.i svg{width:32px;height:32px}</style></head><body><h1>${p.name} — ${icons.length} iconos SVG</h1><div class="grid">${items}</div></body></html>`
+}
+
+/* --------------------------- FUENTE: TTF mínimo -------------------------- */
+function buildTtf() {
+  const u16 = (n) => { const b = new Uint8Array(2); new DataView(b.buffer).setUint16(0, n & 0xFFFF, false); return b }
+  const s16 = (n) => { const b = new Uint8Array(2); new DataView(b.buffer).setInt16(0, n, false); return b }
+  const u32 = (n) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, n >>> 0, false); return b }
+  const area = (pts) => { let s = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; s += a[0] * b[1] - b[0] * a[1] } return s / 2 }
+  const norm = (pts, wantHole) => { const ccw = area(pts) > 0; return (ccw !== wantHole) ? [...pts].reverse() : pts }
+  // Glifos: avance + polígonos (el primero contorno exterior, el resto huecos)
+  const glyphs = [
+    { adv: 600, polys: [[[50, 0], [550, 0], [550, 700], [50, 700]]] },
+    { adv: 400, polys: [] },
+    { adv: 700, polys: [[[110, 0], [590, 0], [350, 720]]] },
+    { adv: 700, polys: [[[110, 720], [590, 720], [350, 0]]] },
+    { adv: 620, polys: [[[100, 0], [580, 0], [580, 90], [200, 90], [200, 310], [520, 310], [520, 400], [200, 400], [200, 630], [580, 630], [580, 720], [100, 720]]] },
+    { adv: 680, polys: [[[100, 0], [180, 0], [180, 300], [560, 60], [560, 120], [180, 360], [180, 330], [520, 330], [520, 660], [180, 660], [180, 720], [100, 720]]] },
+    { adv: 660, polys: [[[100, 720], [600, 720], [600, 640], [360, 640], [360, 0], [300, 0], [300, 640], [100, 640]]] },
+    { adv: 260, polys: [[[80, 0], [180, 0], [180, 700], [80, 700]]] },
+    { adv: 560, polys: [
+      [[280, 0], [430, 80], [500, 230], [500, 470], [430, 620], [280, 700], [130, 620], [60, 470], [60, 230], [130, 80]],
+      [[280, 160], [360, 210], [400, 280], [400, 420], [360, 490], [280, 540], [200, 490], [160, 420], [160, 280], [200, 210]],
+    ] },
+    { adv: 460, polys: [[[140, 0], [240, 0], [240, 700], [140, 700]]] },
+    { adv: 300, polys: [[[100, 0], [200, 0], [200, 110], [100, 110]]] },
+    { adv: 300, polys: [[[110, 300], [190, 300], [190, 700], [110, 700]], [[100, 0], [200, 0], [200, 130], [100, 130]]] },
+  ]
+  const cmapEntries = [[0x20, 1], [0x21, 11], [0x2E, 10], [0x31, 9], [0x41, 2], [0x45, 4], [0x52, 5], [0x54, 6], [0x56, 3], [0x6C, 7], [0x6F, 8]]
+  const nGlyphs = glyphs.length
+
+  // hmtx
+  const hmtxParts = []
+  glyphs.forEach((g) => { hmtxParts.push(u16(g.adv)); hmtxParts.push(s16(g.polys.length ? Math.min(...g.polys[0].map((p) => p[0])) : 0)) })
+  const hmtx = concatBytes(hmtxParts)
+
+  // glyf + loca
+  const glyfParts = []
+  const locaOffsets = [0]
+  let glyfLen = 0
+  glyphs.forEach((g) => {
+    const contours = g.polys.length ? g.polys.map((poly, idx) => norm(poly, idx > 0)) : []
+    const all = contours.flat()
+    const xMin = all.length ? Math.min(...all.map((p) => p[0])) : 0
+    const yMin = all.length ? Math.min(...all.map((p) => p[1])) : 0
+    const xMax = all.length ? Math.max(...all.map((p) => p[0])) : 0
+    const yMax = all.length ? Math.max(...all.map((p) => p[1])) : 0
+    const parts = [s16(contours.length), s16(xMin), s16(yMin), s16(xMax), s16(yMax)]
+    if (contours.length > 0) {
+      let end = -1
+      contours.forEach((poly) => { end += poly.length; parts.push(u16(end)) })
+      parts.push(u16(0)) // instructionLength = 0
+      const flags = []
+      const xs = []
+      const ys = []
+      let px = 0, py = 0
+      contours.forEach((poly) => poly.forEach(([x, y]) => {
+        const dx = x - px, dy = y - py
+        let fl = 0x01
+        if (dx !== 0) { if (dx > -256 && dx < 256) { fl |= 0x02; if (dx < 0) fl |= 0x10; xs.push(Math.abs(dx)) } else xs.push(dx) }
+        if (dy !== 0) { if (dy > -256 && dy < 256) { fl |= 0x04; if (dy < 0) fl |= 0x20; ys.push(Math.abs(dy)) } else ys.push(dy) }
+        flags.push(fl)
+        px = x; py = y
+      }))
+      const flagBytes = new Uint8Array(flags.length)
+      flags.forEach((fl, i) => { flagBytes[i] = fl & 0xFF })
+      const coordBytes = []
+      xs.forEach((v) => coordBytes.push(typeof v === 'number' && v > 255 ? s16(v) : new Uint8Array([v & 0xFF])))
+      ys.forEach((v) => coordBytes.push(typeof v === 'number' && v > 255 ? s16(v) : new Uint8Array([v & 0xFF])))
+      glyfParts.push(concatBytes([...parts, flagBytes, ...coordBytes]))
+    } else {
+      glyfParts.push(concatBytes(parts))
+    }
+    glyfLen += glyfParts[glyfParts.length - 1].length
+    locaOffsets.push(glyfLen / 2)
+  })
+  const glyf = concatBytes(glyfParts)
+  const loca = concatBytes(locaOffsets.map((o) => u16(o)))
+
+  // head (54 bytes)
+  const head = concatBytes([
+    u32(0x00010000), u32(0x00010000), u32(0), u32(0x5F0F3CF5),
+    u16(0), u16(1000), u32(0), u32(0), u32(0), u32(0),
+    s16(0), s16(0), s16(600), s16(720),
+    u16(0), u16(8), s16(2), s16(0), s16(0),
+  ])
+
+  // hhea (36 bytes)
+  const maxPoints = Math.max(...glyphs.map((g) => g.polys.reduce((s, p) => s + p.length, 0)))
+  const hhea = concatBytes([
+    u32(0x00010000), s16(800), s16(-200), s16(0), u16(700), s16(0), s16(0), s16(700),
+    s16(1), s16(0), s16(0), s16(0), s16(0), s16(0), s16(0),
+    s16(0), u16(nGlyphs),
+  ])
+
+  // maxp (32 bytes)
+  const maxContours = Math.max(...glyphs.map((g) => g.polys.length))
+  const maxp = concatBytes([
+    u32(0x00010000), u16(nGlyphs), u16(maxPoints), u16(maxContours),
+    u16(0), u16(0), u16(1), u16(0), u16(0), u16(0), u16(0), u16(0), u16(0), u16(0), u16(0),
+  ])
+
+  // cmap format 4
+  const segCount = cmapEntries.length + 1
+  const segCountX2 = segCount * 2
+  const searchRange = 16
+  const entrySelector = 3
+  const rangeShift = segCountX2 - searchRange
+  const cmapParts = [u16(4), u16(0), u16(0), u16(segCountX2), u16(searchRange), u16(entrySelector), u16(rangeShift)]
+  cmapEntries.forEach(([c]) => cmapParts.push(u16(c)))
+  cmapParts.push(u16(0xFFFF))
+  cmapParts.push(u16(0))
+  cmapEntries.forEach(([c]) => cmapParts.push(u16(c)))
+  cmapParts.push(u16(0xFFFF))
+  cmapEntries.forEach(([c, g]) => cmapParts.push(u16((g - c) & 0xFFFF)))
+  cmapParts.push(u16(1))
+  cmapEntries.forEach(() => cmapParts.push(u16(0)))
+  cmapParts.push(u16(0))
+  const cmap = concatBytes(cmapParts)
+  // (la longitud se parchea debajo)
+  new DataView(cmap.buffer).setUint16(2, cmap.length, false)
+
+  // name
+  const nameStrings = { 1: 'Verta Demo', 2: 'Regular', 4: 'Verta Demo', 6: 'VertaDemo-Regular' }
+  const nameBytes = {}
+  let nameStrLen = 0
+  const nameOffsets = {}
+  for (const id of [1, 2, 4, 6]) {
+    nameOffsets[id] = nameStrLen
+    const b = text(nameStrings[id])
+    nameBytes[id] = b
+    nameStrLen += b.length
+  }
+  const nameParts = [u16(0), u16(4), u16(6 + 4 * 12)]
+  for (const id of [1, 2, 4, 6]) {
+    nameParts.push(u16(3), u16(1), u16(0x409), u16(id), u16(nameBytes[id].length), u16(nameOffsets[id]))
+  }
+  for (const id of [1, 2, 4, 6]) nameParts.push(nameBytes[id])
+  const name = concatBytes(nameParts)
+
+  // OS/2 (versión 0, 78 bytes)
+  const os2 = concatBytes([
+    u16(0), u16(550), u16(400), u16(5), u16(0),
+    s16(650), s16(600), s16(0), s16(75), s16(650), s16(600), s16(0), s16(350),
+    s16(50), s16(250), s16(0),
+    new Uint8Array(10), u32(0), u32(0), u32(0), u32(0),
+    text('VRTM'), u16(0x0040), u16(0x20), u16(0x6F),
+    s16(800), s16(-200), s16(0), u16(800), u16(200),
+  ])
+
+  // post (32 bytes, version 3.0)
+  const post = concatBytes([u32(0x00030000), u32(0), s16(-75), s16(50), u32(0), u32(0), u32(0), u32(0), u32(0)])
+
+  // ensamblado sfnt
+  const tables = { cmap, glyf, head, hhea, hmtx, loca, maxp, name, 'OS/2': os2, post }
+  const tags = Object.keys(tables).sort()
+  const numTables = tags.length
+  const maxPow = 2 ** Math.floor(Math.log2(numTables))
+  const header = concatBytes([u32(0x00010000), u16(numTables), u16(maxPow * 16), u16(Math.log2(maxPow)), u16(numTables * 16 - maxPow * 16)])
+  const tableChecksum = (data) => {
+    const padded = new Uint8Array(Math.ceil(data.length / 4) * 4)
+    padded.set(data)
+    let sum = 0
+    for (let i = 0; i < padded.length; i += 4) sum = (sum + new DataView(padded.buffer).getUint32(i, false)) >>> 0
+    return sum
+  }
+  const records = []
+  const tableOffsets = {}
+  let offset = header.length + numTables * 16
+  for (const tag of tags) {
+    tableOffsets[tag] = offset
+    records.push({ tag, offset })
+    offset += Math.ceil(tables[tag].length / 4) * 4
+  }
+  const seq = [header]
+  for (const r of records) {
+    seq.push(concatBytes([text(r.tag), u32(tableChecksum(tables[r.tag])), u32(r.offset), u32(tables[r.tag].length)]))
+  }
+  for (const r of records) {
+    seq.push(tables[r.tag])
+    const pad = Math.ceil(tables[r.tag].length / 4) * 4 - tables[r.tag].length
+    if (pad) seq.push(new Uint8Array(pad))
+  }
+  const fontNoAdj = concatBytes(seq)
+  const adj = (0xB1B0AFBA - tableChecksum(fontNoAdj)) >>> 0
+  const font = fontNoAdj.slice()
+  new DataView(font.buffer).setUint32(tableOffsets.head + 8, adj, false)
+  return font
+}
+
+/* --------------------------- plantillas HTML reales ---------------------- */
+const escHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+function slugifyName(s) { return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'recurso' }
+function toBase64(bytes) {
+  let bin = ''
+  const CH = 8192
+  for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH))
+  return btoa(bin)
+}
+
+function templateHtml(p) {
+  const feats = (p.features?.length ? p.features : ['Diseño 100% responsive', 'Fácil de personalizar', 'SEO optimizado', 'Documentación incluida', 'Animaciones suaves', 'Tipografía profesional']).slice(0, 6)
+  const featsHtml = feats.map((f) => `<div class="f"><span class="dot"></span><p>${escHtml(f)}</p></div>`).join('')
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escHtml(p.name)}</title>
+<meta name="description" content="${escHtml(p.description ?? '')}">
+<style>
+  :root { --brand: #16a34a; --brand2: #15803d; --bg: #ffffff; --dark: #0b1220; --muted: #64748b; --line: #e2e8f0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; color: #0f172a; background: var(--bg); line-height: 1.6; }
+  .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  header { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.9); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .logo { font-weight: 800; font-size: 20px; color: var(--dark); } .logo span { color: var(--brand); }
+  .nav a { color: var(--muted); text-decoration: none; margin-left: 22px; font-size: 14px; font-weight: 600; }
+  .nav a:hover { color: var(--brand); }
+  .btn { display: inline-block; background: var(--brand); color: #fff; padding: 12px 26px; border-radius: 999px; font-weight: 700; text-decoration: none; transition: background .2s; }
+  .btn:hover { background: var(--brand2); }
+  .hero { padding: 90px 0 70px; text-align: center; background: radial-gradient(60% 60% at 50% 0%, #f0fdf4 0%, #ffffff 70%); }
+  .hero .tag { display: inline-block; background: #dcfce7; color: var(--brand2); font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 999px; }
+  .hero h1 { font-size: clamp(32px, 6vw, 56px); line-height: 1.1; margin: 22px auto 18px; max-width: 760px; color: var(--dark); }
+  .hero h1 em { color: var(--brand); font-style: normal; }
+  .hero p { max-width: 620px; margin: 0 auto 30px; color: var(--muted); font-size: 17px; }
+  .features { padding: 70px 0; }
+  .features h2 { text-align: center; font-size: 30px; margin-bottom: 40px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+  .f { border: 1px solid var(--line); border-radius: 16px; padding: 22px; transition: transform .2s, box-shadow .2s; }
+  .f:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(15,23,42,.08); }
+  .f .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--brand); display: inline-block; margin-bottom: 10px; }
+  .f p { color: #334155; font-size: 15px; }
+  .cta { padding: 80px 0; text-align: center; background: var(--dark); color: #fff; border-radius: 24px; margin: 20px auto 80px; max-width: 1080px; }
+  .cta h2 { font-size: 30px; margin-bottom: 14px; } .cta p { color: #94a3b8; margin-bottom: 26px; }
+  footer { text-align: center; padding: 30px 0; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); }
+  @media (max-width: 640px) { .nav a { margin-left: 12px; } .hero { padding: 60px 0 50px; } }
+</style>
+</head>
+<body>
+<header><div class="container nav"><div class="logo">${escHtml(brand)}<span>.</span></div><nav><a href="#features">Características</a><a href="#cta">Contacto</a></nav></div></header>
+<section class="hero">
+  <div class="container">
+    <span class="tag">Plantilla digital · Versión ${escHtml(p.version ?? '1.0.0')}</span>
+    <h1>${escHtml(p.name)} — <em>tu próximo proyecto</em></h1>
+    <p>${escHtml(p.description ?? 'Plantilla profesional lista para personalizar y publicar.')}</p>
+    <a class="btn" href="#features">Explorar</a>
+  </div>
+</section>
+<section id="features" class="features">
+  <div class="container">
+    <h2>Características</h2>
+    <div class="grid">${featsHtml}</div>
+  </div>
+</section>
+<section class="cta" id="cta">
+  <div class="container">
+    <h2>¿Listo para empezar?</h2>
+    <p>Personaliza esta plantilla con tu contenido y publícala cuando quieras.</p>
+    <a class="btn" href="#">Comenzar ahora</a>
+  </div>
+</section>
+<footer><div class="container">© ${new Date().getFullYear()} ${escHtml(brand)} · Plantilla generada con licencia ${escHtml(p.license ?? 'Uso personal y comercial')}</div></footer>
+</body>
+</html>`
+}
+
+/* --------------------------- cursos: página + PDF ------------------------ */
+function courseHtml(p) {
+  const mods = (p.includes?.length ? p.includes : ['Introducción', 'Fundamentos', 'Proyecto práctico']).slice(0, 6)
+  const modsHtml = mods.map((m, i) => `<li data-m="${i}" class="${i === 0 ? 'open' : ''}"><span class="num">${i + 1}</span>${escHtml(m)}</li>`).join('')
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(p.name)}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #0b1220; color: #e2e8f0; display: flex; min-height: 100vh; }
+  aside { width: 300px; background: #0f172a; padding: 26px 18px; border-right: 1px solid #1e293b; }
+  aside h2 { font-size: 16px; margin-bottom: 18px; color: #fff; }
+  aside li { list-style: none; display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 10px; margin-bottom: 6px; color: #94a3b8; cursor: pointer; font-size: 14px; }
+  aside li.open { background: #16a34a22; color: #86efac; }
+  aside .num { width: 24px; height: 24px; border-radius: 50%; background: #16a34a; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+  main { flex: 1; padding: 40px; max-width: 780px; }
+  main h1 { font-size: 28px; margin-bottom: 8px; }
+  .meta { color: #64748b; font-size: 14px; margin-bottom: 26px; }
+  .card { background: #111a2e; border: 1px solid #1e293b; border-radius: 16px; padding: 22px; margin-bottom: 18px; }
+  .card h3 { color: #86efac; margin-bottom: 10px; }
+  .card p { color: #cbd5e1; font-size: 15px; }
+  label.check { display: flex; align-items: center; gap: 10px; color: #94a3b8; font-size: 14px; cursor: pointer; margin-top: 14px; }
+  .btn { background: #16a34a; color: #fff; border: 0; padding: 12px 24px; border-radius: 999px; font-weight: 700; cursor: pointer; margin-top: 10px; }
+  @media (max-width: 720px) { body { flex-direction: column; } aside { width: 100%; border-right: 0; border-bottom: 1px solid #1e293b; } }
+</style>
+</head>
+<body>
+<aside><h2>Módulos del curso</h2><ul>${modsHtml}</ul></aside>
+<main>
+  <h1>${escHtml(p.name)}</h1>
+  <p class="meta">Versión ${escHtml(p.version ?? '1.0.0')} · ${escHtml(p.fileType ?? 'Curso')} · ${escHtml(p.fileSize ?? '')} · Licencia ${escHtml(p.license ?? 'Uso personal')}</p>
+  <div class="card"><h3>Bienvenida</h3><p>${escHtml(p.description ?? 'Curso práctico con acceso inmediato.')}</p></div>
+  <div class="card"><h3>Cómo usar este curso</h3><p>Abre cada módulo del menú, sigue las lecciones en orden y marca tu progreso. Tus avances se guardan en este dispositivo.</p><label class="check"><input type="checkbox" data-save="done1"> Módulo 1 completado</label></div>
+  <div class="card"><h3>Certificado</h3><p>Al finalizar todos los módulos tendrás acceso al certificado de finalización de ${escHtml(p.brand ?? 'Verta Academy')}.</p><button class="btn" onclick="alert('¡Curso completado! Guarda esta página como comprobante.')">Descargar certificado</button></div>
+</main>
+<script>
+  document.querySelectorAll('aside li').forEach(li => li.addEventListener('click', () => { document.querySelectorAll('aside li').forEach(x => x.classList.remove('open')); li.classList.add('open'); }));
+  document.querySelectorAll('[data-save]').forEach(cb => { cb.checked = localStorage.getItem('verta.' + cb.dataset.save) === '1'; cb.addEventListener('change', () => localStorage.setItem('verta.' + cb.dataset.save, cb.checked ? '1' : '0')); });
+</script>
+</body>
+</html>`
+}
+
+function courseNotesLines(p) {
+  const mods = (p.includes?.length ? p.includes : ['Introducción', 'Fundamentos', 'Proyecto práctico']).slice(0, 8)
+  return [
+    `Curso: ${p.name}`,
+    `Formato: ${p.fileType} · Tamaño: ${p.fileSize}`,
+    `Licencia: ${p.license} · Versión: ${p.version ?? '1.0.0'}`,
+    '',
+    'Contenido del curso:',
+    ...mods.map((m, i) => `${i + 1}. ${m}`),
+    '',
+    'Requisitos:',
+    ...(p.requirements?.length ? p.requirements : ['Conexión a internet', 'Ganas de aprender']).map((r) => `  • ${r}`),
+  ]
+}
+
+/* ------------------------------- plugins -------------------------------- */
+function vsCodeTheme(p) {
+  return {
+    name: p.name,
+    type: 'dark',
+    colors: {
+      'editor.background': '#0b1220',
+      'editor.foreground': '#e2e8f0',
+      'editor.selectionBackground': '#16a34a55',
+      'focusBorder': '#22c55e',
+      'activityBar.background': '#0b1220',
+      'sideBar.background': '#0f172a',
+      'editorGutter.background': '#0b1220',
+      'statusBar.background': '#15803d',
+      'statusBar.foreground': '#ffffff',
+      'titleBar.activeBackground': '#0b1220',
+      'input.background': '#111a2e',
+      'input.border': '#1e293b',
+    },
+    tokenColors: [
+      { scope: ['keyword', 'storage'], settings: { foreground: '#4ade80' } },
+      { scope: ['string', 'string.quoted'], settings: { foreground: '#86efac' } },
+      { scope: ['comment'], settings: { foreground: '#64748b', fontStyle: 'italic' } },
+      { scope: ['entity.name.function', 'support.function'], settings: { foreground: '#facc15' } },
+      { scope: ['variable', 'entity.name.variable'], settings: { foreground: '#7dd3fc' } },
+      { scope: ['constant', 'constant.numeric'], settings: { foreground: '#fda4af' } },
+      { scope: ['entity.name.class', 'support.type'], settings: { foreground: '#f0abfc' } },
+    ],
+  }
+}
+function figmaPlugin(p) {
+  const manifest = JSON.stringify({
+    name: p.name, id: `vertamart-${p.slug}`, api: '1.0.0', main: 'code.js', ui: 'ui.html', editorType: ['figma'], networkAccess: { allowedDomains: ['none'] },
+  }, null, 2)
+  const code = `// ${p.name} — plugin de Figma (demo real)
+figma.showUI(__html__, { width: 300, height: 240 })
+figma.ui.onmessage = (msg) => {
+  if (msg.type === 'create') {
+    const frame = figma.createFrame()
+    frame.name = 'Vertamart'
+    frame.resize(640, 360)
+    frame.fills = [{ type: 'SOLID', color: { r: 0.04, g: 0.07, b: 0.13 } }]
+    for (let i = 0; i < 5; i++) {
+      const rect = figma.createRectangle()
+      rect.resize(60 + i * 30, 40)
+      rect.x = 40 + i * 120
+      rect.y = 160
+      rect.fills = [{ type: 'SOLID', color: { r: 0.09, g: 0.64, b: 0.29 } }]
+      rect.cornerRadius = 8
+      frame.appendChild(rect)
+    }
+    frame.x = figma.viewport.center.x - 320
+    frame.y = figma.viewport.center.y - 180
+    figma.currentPage.selection = [frame]
+    figma.viewport.scrollAndZoomIntoView([frame])
+  }
+  if (msg.type === 'close') figma.closePlugin()
+}
+`
+  const ui = `<!doctype html><html><body style="font-family:system-ui;background:#0b1220;color:#e2e8f0;padding:16px"><h2 style="font-size:16px;margin:0 0 12px">${escHtml(p.name)}</h2><button id="b" style="background:#16a34a;color:#fff;border:0;padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer">Crear marco demo</button><script>document.getElementById('b').onclick=()=>parent.postMessage({pluginMessage:{type:'create'}},'*')</script></body></html>`
+  return { manifest, code, ui }
+}
+function npmPlugin(p) {
+  const pkg = JSON.stringify({
+    name: `vertamart-${slugifyName(p.name)}`, version: p.version ?? '1.0.0', description: p.description ?? '',
+    main: 'index.js', license: 'MIT', files: ['index.js'],
+  }, null, 2)
+  const js = `/** ${p.name} v${p.version ?? '1.0.0'}
+ * ${p.description ?? ''}
+ * Compatibilidad: ${p.compatibility ?? ''}
+ * Licencia: ${p.license ?? 'Uso personal y comercial'}
+ */
+
+/** Convierte un hex (#16a34a) a RGB. */
+export function hexToRgb(hex) {
+  const h = hex.replace('#', '')
+  if (h.length !== 6) throw new Error('Formato inválido')
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  }
+}
+
+/** Genera una paleta de N tonos a partir de un color base. */
+export function palette(base, n = 5) {
+  const { r, g, b } = hexToRgb(base)
+  return Array.from({ length: n }, (_, i) => {
+    const t = i / Math.max(1, n - 1)
+    const mix = (v) => Math.round(v + (255 - v) * t * 0.6)
+    return \`rgb(\${mix(r)}, \${mix(g)}, \${mix(b)})\`
+  })
+}
+
+/** Retorna un color con opacidad aplicada. */
+export function withAlpha(hex, alpha) {
+  const { r, g, b } = hexToRgb(hex)
+  return \`rgba(\${r}, \${g}, \${b}, \${alpha})\`
+}
+
+export default { hexToRgb, palette, withAlpha }
+`
+  return { packageJson: pkg, indexJs: js }
+}
+
+/* ---------------------------- packs: recursos ---------------------------- */
+function packManifest(p) {
+  return JSON.stringify({
+    name: p.name, version: p.version ?? '1.0.0', format: p.fileType, size: p.fileSize,
+    license: p.license, compatibility: p.compatibility, brand: p.brand,
+    includes: p.includes ?? [], updatedAt: new Date().toISOString(),
+  }, null, 2)
+}
+function makeMockupSvg(title, sub) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+<rect width="1200" height="800" fill="#0b1220"/>
+<rect x="140" y="120" width="920" height="560" rx="24" fill="#111a2e" stroke="#1e293b" stroke-width="2"/>
+<circle cx="240" cy="200" r="36" fill="#16a34a"/>
+<rect x="300" y="184" width="340" height="18" rx="9" fill="#e2e8f0"/>
+<rect x="300" y="216" width="220" height="12" rx="6" fill="#64748b"/>
+<rect x="140" y="560" width="920" height="120" rx="20" fill="#16a34a22" stroke="#16a34a" stroke-width="2"/>
+<text x="600" y="640" font-family="system-ui" font-size="34" font-weight="700" fill="#86efac" text-anchor="middle">${escHtml(title)}</text>
+<text x="600" y="440" font-family="system-ui" font-size="44" font-weight="800" fill="#ffffff" text-anchor="middle">${escHtml(sub)}</text>
+</svg>`
+}
+function makeSocialSvg(title, sub) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#15803d"/><stop offset="1" stop-color="#0b1220"/></linearGradient></defs>
+<rect width="1080" height="1080" fill="url(#g)"/>
+<circle cx="900" cy="180" r="160" fill="#ffffff12"/>
+<circle cx="180" cy="900" r="220" fill="#16a34a22"/>
+<text x="540" y="480" font-family="system-ui" font-size="64" font-weight="800" fill="#ffffff" text-anchor="middle">${escHtml(title)}</text>
+<text x="540" y="560" font-family="system-ui" font-size="36" fill="#86efac" text-anchor="middle">${escHtml(sub)}</text>
+<text x="540" y="960" font-family="system-ui" font-size="30" font-weight="700" fill="#ffffffcc" text-anchor="middle">vertamart.pages.dev</text>
+</svg>`
+}
+function makeTextureSvg() {
+  const tiles = []
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    tiles.push(`<rect x="${x * 128}" y="${y * 128}" width="128" height="128" fill="${(x + y) % 2 === 0 ? '#16a34a' : '#15803d'}"/>`)
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">${tiles.join('')}</svg>`
+}
+function genericContentHtml(p) {
+  const inc = (p.includes?.length ? p.includes : ['Archivos principales', 'Documentación', 'Extras']).map((i) => `<li>${escHtml(i)}</li>`).join('')
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escHtml(p.name)}</title><style>body{font-family:system-ui;background:#0b1220;color:#e2e8f0;max-width:720px;margin:40px auto;padding:0 20px}h1{font-size:26px;color:#86efac}.meta{color:#64748b;font-size:14px}ul{line-height:2}.box{background:#111a2e;border:1px solid #1e293b;border-radius:14px;padding:18px 22px;margin:14px 0}</style></head><body><h1>${escHtml(p.name)}</h1><p class="meta">Versión ${escHtml(p.version ?? '1.0.0')} · ${escHtml(p.fileType ?? '')} · ${escHtml(p.fileSize ?? '')}</p><div class="box"><p>${escHtml(p.description ?? '')}</p></div><div class="box"><strong>Contenido incluido:</strong><ul>${inc}</ul></div><div class="box"><strong>Compatibilidad:</strong> ${escHtml(p.compatibility ?? '')}<br><strong>Licencia:</strong> ${escHtml(p.license ?? 'Uso personal y comercial')}</div></body></html>`
+}
+function objPreviewHtml(p) {
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escHtml(p.name)} — Preview 3D</title><style>body{font-family:system-ui;background:#0b1220;color:#e2e8f0;margin:0;padding:40px;text-align:center}h1{font-size:22px;color:#86efac}p{color:#94a3b8}.stage{max-width:420px;margin:30px auto}</style></head><body><h1>${escHtml(p.name)}</h1><p>Modelo OBJ + materiales MTL incluidos. Ábrelo en Blender, Maya, Cinema 4D, Unreal o Unity.</p><div class="stage"><svg viewBox="0 0 200 200"><rect x="20" y="150" width="160" height="20" fill="#1e293b"/><rect x="70" y="80" width="60" height="70" fill="#16a34a"/><rect x="50" y="30" width="100" height="50" fill="#15803d"/><rect x="10" y="100" width="50" height="70" fill="#22c55e"/><rect x="140" y="100" width="50" height="70" fill="#22c55e"/></svg></div><p>Modelo de demostración generado por Vertamart — versión ${escHtml(p.version ?? '1.0.0')}</p></body></html>`
+}
+function fontCss(p) {
+  return `@font-face {
+  font-family: 'Verta Demo';
+  src: url('font.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+.verta-demo {
+  font-family: 'Verta Demo', sans-serif;
+}
+`
+}
+function fontSpecimenHtml(p, base64Ttf) {
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(p.name)} — Muestra</title>
+<style>@font-face{font-family:'Verta Demo';src:url(data:font/ttf;base64,${base64Ttf}) format('truetype')}
+body{font-family:system-ui;background:#0b1220;color:#e2e8f0;margin:0;padding:50px 30px}.demo{font-family:'Verta Demo',sans-serif;color:#86efac;line-height:1.1}.big{font-size:96px}.med{font-size:44px}.meta{color:#64748b;font-size:14px;margin:24px 0 10px}.row{border-bottom:1px solid #1e293b;padding:22px 0}h1{font-size:22px}</style></head><body><h1>${escHtml(p.name)} — Muestra de fuente (v${escHtml(p.version ?? '1.0.0')})</h1>
+<p class="meta">Instala font.ttf en tu sistema o usa font.css en tu proyecto web.</p>
+<div class="row"><div class="demo big">Vertamart</div></div>
+<div class="row"><div class="demo med">Aa Vv Tt 1. !</div></div>
+<div class="row"><div class="demo" style="font-size:24px">La fuente digital de demostración incluida con tu compra.</div></div></body></html>`
+}
+
+/* ----------------------------- README y licencia ------------------------- */
+function productReadme(p, licenseKey) {
+  const lines = [
+    `${p.name}`,
+    `${'='.repeat(Math.min(50, String(p.name).length + 2))}`,
+    `Producto digital entregado por Vertamart (vertamart.pages.dev)`,
+    '',
+    `  Código:       ${p.productCode ?? '—'}`,
+    `  Versión:      ${p.version ?? '1.0.0'}`,
+    `  Formato:      ${p.fileType ?? 'ZIP'}`,
+    `  Tamaño:       ${p.fileSize ?? '—'}`,
+    `  Licencia:     ${p.license ?? 'Uso personal y comercial'}`,
+    `  Compatible:   ${p.compatibility ?? '—'}`,
+    `  Actualiz.:    ${p.updates ?? '—'}`,
+    `  Soporte:      ${p.support ?? '—'}`,
+    `  Descargado:   ${new Date().toISOString().slice(0, 10)}`,
+    '',
+    `DESCRIPCIÓN`,
+    p.description ?? '',
+    '',
+    `QUÉ INCLUYE`,
+    ...(p.includes?.length ? p.includes.map((i) => `  • ${i}`) : ['  • Archivos del producto']),
+    '',
+    `REQUISITOS`,
+    ...(p.requirements?.length ? p.requirements.map((i) => `  • ${i}`) : ['  • Ninguno adicional']),
+    '',
+    `LICENCIA ÚNICA`,
+    `  ${licenseKey}`,
+    `  Esta licencia está asociada a tu cuenta y a este pedido. No la compartas.`,
+    '',
+    `Gracias por tu compra. Si el administrador publica una versión nueva, podrás`,
+    `descargarla desde tu biblioteca en Vertamart según las condiciones de la licencia.`,
+  ]
+  return lines.join('\n')
+}
+function licenseText(p, licenseKey) {
+  return [
+    `VERTAMART — LICENCIA DE PRODUCTO DIGITAL`,
+    `======================================`,
+    `Producto:   ${p.name}`,
+    `Código:     ${p.productCode ?? '—'}`,
+    `Versión:    ${p.version ?? '1.0.0'}`,
+    `Nº licencia: ${licenseKey}`,
+    `Fecha:      ${new Date().toISOString().slice(0, 10)}`,
+    `Tipo:       ${p.license ?? 'Uso personal y comercial'}`,
+    '',
+    `Este documento acredita la compra legítima del producto digital anterior.`,
+    `La licencia es personal e intransferible, vinculada a la cuenta que realizó`,
+    `la compra. No está permitida la redistribución del archivo.`,
+    '',
+    `Vertamart — vertamart.pages.dev`,
+  ].join('\n')
+}
+
+/* ------------------- despachador principal de archivos ------------------- */
+const zipResult = (p, files) => ({ filename: `vertamart-${p.slug}-v${p.version ?? '1.0.0'}.zip`, contentType: 'application/zip', bytes: zipStore(files) })
+
+function buildProductFile(p, licenseKey) {
+  const readme = productReadme(p, licenseKey)
+  const lic = licenseText(p, licenseKey)
+  const base = (extra) => [...extra, { name: 'README.txt', data: text(readme) }, { name: 'LICENCIA.txt', data: text(lic) }]
+  const cat = p.category
+  if (cat === 'plantillas') {
+    return zipResult(p, base([{ name: 'index.html', data: text(templateHtml(p)) }]))
+  }
+  if (cat === 'presets') {
+    const names = (p.includes?.length ? p.includes : ['Forest Green', 'Moody Green', 'Soft Portrait', 'Golden Hour', 'Noir']).slice(0, 5)
+    return zipResult(p, base(names.map((n, i) => ({ name: `presets/${String(i + 1).padStart(2, '0')}-${slugifyName(n)}.xmp`, data: buildXmp(n) }))))
+  }
+  if (cat === 'iconos') {
+    const icons = Object.keys(ICON_PATHS)
+    return zipResult(p, base([
+      ...icons.map((n) => ({ name: `iconos/${n}.svg`, data: text(makeSvgIcon(n)) })),
+      { name: 'preview.html', data: text(iconPreviewHtml(p, icons)) },
+    ]))
+  }
+  if (cat === 'fuentes') {
+    const ttf = buildTtf()
+    return zipResult(p, base([
+      { name: 'font.ttf', data: ttf },
+      { name: 'font.css', data: text(fontCss(p)) },
+      { name: 'specimen.html', data: text(fontSpecimenHtml(p, toBase64(ttf))) },
+    ]))
+  }
+  if (cat === 'modelos-3d') {
+    const m = buildObj()
+    return zipResult(p, base([
+      { name: 'modelo.obj', data: text(m.obj) },
+      { name: 'materiales.mtl', data: text(m.mtl) },
+      { name: 'preview.html', data: text(objPreviewHtml(p)) },
+    ]))
+  }
+  if (cat === 'plugins') {
+    const lower = `${p.name} ${p.compatibility ?? ''} ${p.description ?? ''}`.toLowerCase()
+    if (lower.includes('vs code') || lower.includes('vscode') || lower.includes('theme')) {
+      return zipResult(p, base([{ name: 'tema-vscode.json', data: text(JSON.stringify(vsCodeTheme(p), null, 2)) }]))
+    }
+    if (lower.includes('figma')) {
+      const fig = figmaPlugin(p)
+      return zipResult(p, base([
+        { name: 'manifest.json', data: text(fig.manifest) },
+        { name: 'code.js', data: text(fig.code) },
+        { name: 'ui.html', data: text(fig.ui) },
+      ]))
+    }
+    const npm = npmPlugin(p)
+    return zipResult(p, base([
+      { name: 'package.json', data: text(npm.packageJson) },
+      { name: 'index.js', data: text(npm.indexJs) },
+    ]))
+  }
+  if (cat === 'cursos') {
+    return zipResult(p, base([
+      { name: 'curso.html', data: text(courseHtml(p)) },
+      { name: 'apuntes.pdf', data: buildPdf(`${p.name} — Apuntes`, courseNotesLines(p)) },
+    ]))
+  }
+  if (cat === 'packs') {
+    const files = []
+    const lower = `${p.name} ${p.description ?? ''}`.toLowerCase()
+    if (lower.includes('sonido') || lower.includes('wav') || lower.includes('audio')) {
+      files.push({ name: 'demo-sonido.wav', data: buildWav(3) })
+    }
+    if (lower.includes('mockup')) {
+      files.push({ name: 'plantilla-mockup-1.svg', data: text(makeMockupSvg(`${p.name} — Tarjeta`, 'Tarjeta de presentación')) })
+      files.push({ name: 'plantilla-mockup-2.svg', data: text(makeMockupSvg(`${p.name} — Póster`, 'Póster A4 vertical')) })
+    }
+    if (lower.includes('social') || lower.includes('instagram')) {
+      files.push({ name: 'post-instagram-1.svg', data: text(makeSocialSvg(p.name, 'Post 1080×1080')) })
+      files.push({ name: 'historia-instagram-1.svg', data: text(makeSocialSvg(p.name, 'Historia 1080×1920')) })
+    }
+    if (lower.includes('textura') || lower.includes('pbr')) {
+      files.push({ name: 'textura-verde.svg', data: text(makeTextureSvg()) })
+    }
+    files.push({ name: 'manifest.json', data: text(packManifest(p)) })
+    files.push({ name: 'contenido.html', data: text(genericContentHtml(p)) })
+    return zipResult(p, base(files))
+  }
+  // Categoría genérica: nunca entrega vacío
+  return zipResult(p, base([
+    { name: 'contenido.html', data: text(genericContentHtml(p)) },
+  ]))
 }
 
 function promoToApi(r) {
@@ -838,10 +1702,11 @@ const handlers = {
     const fileSize = String(body?.fileSize ?? '10 MB').trim() || '10 MB'
     const compatibility = String(body?.compatibility ?? 'Windows · macOS · Linux').trim()
     const license = String(body?.license ?? 'Uso personal y comercial').trim()
+    const version = String(body?.version ?? '1.0.0').trim() || '1.0.0'
     const productCode = `VT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
 
     if (name.length < 3) return fail(400, 'El nombre debe tener al menos 3 caracteres', 'INVALID_NAME')
-    if (!Number.isFinite(price) || price <= 0) return fail(400, 'El precio debe ser mayor a 0', 'INVALID_PRICE')
+    if (!Number.isFinite(price) || price < 0) return fail(400, 'El precio no es válido', 'INVALID_PRICE')
     if (!Number.isInteger(stock) || stock < 0) return fail(400, 'El stock no es válido', 'INVALID_STOCK')
     if (image && !/^https?:\/\//.test(image)) return fail(400, 'La imagen debe ser una URL http(s)', 'INVALID_IMAGE')
 
@@ -852,9 +1717,9 @@ const handlers = {
       slug = `${base}-${Date.now().toString(36).slice(-4)}${n++}`
     }
     const info = await db.run(
-      `INSERT INTO products (owner_id, name, slug, category, price, old_price, stock, badge, description, features, image, product_code, file_type, file_size, compatibility, license)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      user.id, name, slug, category, price, oldPrice, stock, badge, description, JSON.stringify(features), image, productCode, fileType, fileSize, compatibility, license,
+      `INSERT INTO products (owner_id, name, slug, category, price, old_price, stock, badge, description, features, image, product_code, file_type, file_size, compatibility, license, version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      user.id, name, slug, category, price, oldPrice, stock, badge, description, JSON.stringify(features), image, productCode, fileType, fileSize, compatibility, license, version,
     )
     const row = await db.get('SELECT * FROM products WHERE id = ?', info.lastId)
     return json(productToApi(row), 201)
@@ -886,7 +1751,7 @@ const handlers = {
       values.push(JSON.stringify(body.features.map(String)))
     }
     // Campos digitales (formato, tamaño, licencia, descargas, soporte...)
-    const digitalMap = { fileType: 'file_type', fileSize: 'file_size', compatibility: 'compatibility', license: 'license', updates: 'updates', support: 'support' }
+    const digitalMap = { fileType: 'file_type', fileSize: 'file_size', compatibility: 'compatibility', license: 'license', updates: 'updates', support: 'support', version: 'version' }
     for (const [bodyKey, col] of Object.entries(digitalMap)) {
       if (body?.[bodyKey] !== undefined) {
         sets.push(`${col} = ?`)
@@ -1526,9 +2391,11 @@ const handlers = {
       userId, customerName, customerEmail, subtotal, discount, shipping, total, orderStatus, estimatedDelivery, trackingToken,
     )
     for (const it of items) {
+      const prod = await db.get('SELECT version FROM products WHERE id = ?', String(it.productId ?? ''))
+      const licenseKey = `VERTA-${rand4()}-${rand4()}-${rand4()}`
       await db.run(
-        'INSERT INTO order_items (order_id, product_id, name, price, qty) VALUES (?, ?, ?, ?, ?)',
-        order.lastId, String(it.productId ?? ''), String(it.name ?? ''), Number(it.price ?? 0), Number(it.qty ?? 1),
+        'INSERT INTO order_items (order_id, product_id, name, price, qty, license_key, version_at_purchase) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        order.lastId, String(it.productId ?? ''), String(it.name ?? ''), Number(it.price ?? 0), Number(it.qty ?? 1), licenseKey, prod?.version ?? '1.0.0',
       )
     }
     await db.run(
@@ -1894,11 +2761,39 @@ const handlers = {
   },
 
   // BIBLIOTECA DIGITAL: productos comprados por el usuario (con acceso y descarga)
+  // DESCARGAR PRODUCTO GRATUITO: lo añade a la biblioteca al instante con licencia.
+  async freeProduct(user, body, env) {
+    const productId = String(body?.productId ?? '')
+    if (!productId) return fail(400, 'Falta el id del producto', 'BAD_REQUEST')
+    const product = await db.get('SELECT * FROM products WHERE id = ?', productId)
+    if (!product) return fail(404, 'Producto no encontrado', 'NOT_FOUND')
+    if (Number(product.price) > 0) return fail(403, 'Este producto no es gratuito', 'FORBIDDEN')
+    const owned = await db.get(
+      `SELECT oi.id FROM order_items oi JOIN orders o ON o.id = oi.order_id
+       WHERE o.user_id = ? AND o.status IN ('paid','delivered') AND oi.product_id = ? LIMIT 1`,
+      user.id, productId,
+    )
+    if (owned) return fail(409, 'Ya tienes este producto en tu biblioteca', 'ALREADY_OWNED')
+    const licenseKey = `VERTA-${rand4()}-${rand4()}-${rand4()}`
+    const trackingToken = randomToken()
+    const order = await db.run(
+      `INSERT INTO orders (user_id, customer_name, customer_email, subtotal, discount, shipping, total, status, estimated_delivery, tracking_token)
+       VALUES (?, ?, ?, 0, 0, 0, 0, 'paid', NULL, ?)`,
+      user.id, user.name ?? '', user.email ?? '', trackingToken,
+    )
+    await db.run(
+      'INSERT INTO order_items (order_id, product_id, name, price, qty, license_key, version_at_purchase) VALUES (?, ?, ?, 0, 1, ?, ?)',
+      order.lastId, productId, product.name, licenseKey, product.version ?? '1.0.0',
+    )
+    return json({ id: order.lastId, licenseKey, status: 'paid' }, 201)
+  },
+
   async myLibrary(user) {
     const rows = await db.all(
-      `SELECT DISTINCT p.id, p.name, p.slug, p.category, p.image, p.file_type, p.file_size, p.compatibility, p.license,
-              p.downloads, p.includes, p.requirements, p.updates, p.support, p.brand, p.price,
-              o.id AS order_id, o.status AS order_status, o.created_at AS purchased_at
+      `SELECT p.id, p.name, p.slug, p.category, p.image, p.file_type, p.file_size, p.compatibility, p.license,
+              p.downloads, p.includes, p.requirements, p.updates, p.support, p.brand, p.price, p.version,
+              o.id AS order_id, o.status AS order_status, o.created_at AS purchased_at,
+              oi.license_key, oi.version_at_purchase
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
        JOIN products p ON p.id = oi.product_id
@@ -1924,17 +2819,22 @@ const handlers = {
         requirements: safeJson(r.requirements, []),
         updates: r.updates ?? 'Actualizaciones de por vida',
         support: r.support ?? 'Soporte por correo',
+        version: r.version ?? r.version_at_purchase ?? '1.0.0',
+        versionAtPurchase: r.version_at_purchase ?? r.version ?? '1.0.0',
+        hasUpdate: (r.version ?? r.version_at_purchase ?? '1.0.0') !== (r.version_at_purchase ?? r.version ?? '1.0.0'),
+        licenseKey: r.license_key ?? null,
         orderId: r.order_id,
         purchasedAt: r.purchased_at,
       })),
     })
   },
 
-  // Descarga de un producto comprado: genera un archivo de licencia de muestra.
-  // (Arquitectura lista para conectar un bucket/almacenamiento real más adelante.)
+  // Descarga REAL de un producto comprado: genera los archivos del producto
+  // (plantilla, ZIP de recursos, fuente TTF, preset XMP, modelo OBJ, curso PDF,
+  // plugin, etc.) + README + licencia única, todo empaquetado en un ZIP.
   async downloadProduct(user, id, env) {
     const row = await db.get(
-      `SELECT DISTINCT p.id, p.name, p.slug, p.file_type, p.file_size, p.license, p.downloads, p.category
+      `SELECT DISTINCT p.*, oi.license_key, oi.version_at_purchase, o.id AS order_id
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
        JOIN products p ON p.id = oi.product_id
@@ -1942,27 +2842,20 @@ const handlers = {
       user.id, Number(id),
     )
     if (!row) return fail(403, 'No tienes acceso a este archivo', 'FORBIDDEN')
+    // Solo comprobación de acceso: sin esto, cualquier usuario podría generar el archivo.
+    const p = productToApi(row)
+    // Entrega la versión que el usuario compró (o la actual si no se registró).
+    p.version = row.version_at_purchase || row.version || '1.0.0'
+
+    // Genera el archivo real del producto con la licencia de esta compra.
+    const { filename, contentType, bytes } = buildProductFile(p, row.license_key ?? `VERTA-${rand4()}-${rand4()}-${rand4()}`)
     // Incrementa el contador de descargas del producto.
     await db.run('UPDATE products SET downloads = downloads + 1 WHERE id = ?', row.id)
-    // Archivo de muestra: licencia + metadatos del producto.
-    const date = new Date().toISOString().slice(0, 10)
-    const body = [
-      `VERTAMART — PRODUCTO DIGITAL`,
-      `=============================`,
-      `Producto: ${row.name}`,
-      `Referencia: ${row.slug}`,
-      `Formato: ${row.file_type ?? 'ZIP'}`,
-      `Tamaño aproximado: ${row.file_size ?? '10 MB'}`,
-      `Licencia: ${row.license ?? 'Uso personal y comercial'}`,
-      `Fecha de descarga: ${date}`,
-      ``,
-      `Gracias por tu compra. Guarda este archivo como comprobante de tu licencia.`,
-      `Vertamart — vertamart.pages.dev`,
-    ].join('\n')
-    return new Response(body, {
+    return new Response(bytes, {
       headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Disposition': `attachment; filename="vertamart-${row.slug}-licencia.txt"`,
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'private, no-store',
         ...CORS,
       },
     })
@@ -2205,6 +3098,7 @@ const ROUTES = [
   ['GET', /^\/api\/users\/(\d+)$/, (u, b, req, m) => handlers.getUser(u, Number(m[1])), false, false],
   ['GET', /^\/api\/me\/points$/, (u) => handlers.mePoints(u), true, false],
   ['GET', /^\/api\/me\/library$/, (u) => handlers.myLibrary(u), true, false],
+  ['POST', /^\/api\/me\/library\/free$/, (u, b, req, m, env) => handlers.freeProduct(u, b, env), true, false],
   ['GET', /^\/api\/me\/library\/(\d+)\/download$/, (u, b, req, m, env) => handlers.downloadProduct(u, m[1], env), true, false],
   ['POST', /^\/api\/push\/subscribe$/, (u, b) => handlers.pushSubscribe(u, b), true, false],
   ['POST', /^\/api\/push\/unsubscribe$/, (u, b) => handlers.pushUnsubscribe(u, b), true, false],

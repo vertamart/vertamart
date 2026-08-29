@@ -162,6 +162,7 @@ export interface ProductInput {
   fileSize?: string
   compatibility?: string
   license?: string
+  version?: string
 }
 
 export interface OrderInput {
@@ -232,6 +233,10 @@ export interface LibraryItem {
   support: string
   orderId: number
   purchasedAt: string
+  version: string
+  versionAtPurchase: string
+  hasUpdate: boolean
+  licenseKey: string | null
 }
 
 export interface PayoutTransaction {
@@ -294,7 +299,7 @@ export const storeService = {
   createProduct(input: ProductInput) {
     return apiFetch<StoredProduct>('/products', { method: 'POST', headers: authHeaders(), body: input })
   },
-  updateProduct(id: string, patch: Partial<ProductInput> & { status?: string; downloads?: number; updates?: string; support?: string; includes?: string[]; requirements?: string[] }) {
+  updateProduct(id: string, patch: Partial<ProductInput> & { status?: string; downloads?: number; updates?: string; support?: string; includes?: string[]; requirements?: string[]; version?: string }) {
     return apiFetch<StoredProduct>(`/products/${id}`, { method: 'PATCH', headers: authHeaders(), body: patch })
   },
   deleteProduct(id: string) {
@@ -325,13 +330,25 @@ export const storeService = {
   myLibrary() {
     return apiFetch<{ items: LibraryItem[] }>('/me/library', { headers: authHeaders() })
   },
+  /** Añade un producto gratuito a la biblioteca del usuario (con licencia). */
+  freeProduct(productId: string) {
+    return apiFetch<{ id: number; licenseKey: string; status: string }>('/me/library/free', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: { productId },
+    })
+  },
   /** Descarga un producto comprado (requiere sesión): devuelve el blob del archivo. */
-  async downloadProduct(id: string) {
+  /** Devuelve el archivo real del producto y su nombre de fichero. */
+  async downloadProduct(id: string): Promise<{ blob: Blob; filename: string }> {
     const res = await fetch(`${API_BASE_URL}/me/library/${encodeURIComponent(id)}/download`, {
       headers: authHeaders(),
     })
     if (!res.ok) throw new ApiRequestError({ status: res.status, message: 'No tienes acceso a este archivo' })
-    return res.blob()
+    const blob = await res.blob()
+    const cd = res.headers.get('Content-Disposition') ?? ''
+    const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
+    return { blob, filename: match ? match[1] : 'vertamart-descarga.zip' }
   },
 
   /* -------------------- Perfiles, seguir y chat -------------------- */

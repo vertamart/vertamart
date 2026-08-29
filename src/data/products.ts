@@ -24,6 +24,8 @@ export interface Product {
   license: string
   /** Nº de descargas realizadas. */
   downloads: number
+  /** Versión actual del archivo digital (ej. "1.2.0"). */
+  version?: string
   /** Qué incluye la descarga. */
   includes: string[]
   /** Requisitos del sistema / software necesario. */

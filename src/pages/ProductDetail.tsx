@@ -34,6 +34,26 @@ export function ProductDetail() {
   const [reviewErrors, setReviewErrors] = useState<Record<string, string>>({})
   const [savingReview, setSavingReview] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [claimingFree, setClaimingFree] = useState(false)
+  const [freeClaimed, setFreeClaimed] = useState(false)
+
+  const claimFree = async () => {
+    if (!user) {
+      notify('Inicia sesión para descargar este producto gratuito', 'info')
+      return
+    }
+    setClaimingFree(true)
+    try {
+      const res = await storeService.freeProduct(product!.id)
+      setFreeClaimed(true)
+      notify(`¡Producto añadido a tu biblioteca! Licencia: ${res.licenseKey}`, 'success')
+    } catch (e) {
+      const msg = e instanceof Error && e.message.includes('409') ? 'Ya tienes este producto en tu biblioteca' : 'No se pudo añadir el producto. Inténtalo de nuevo.'
+      notify(msg, 'info')
+    } finally {
+      setClaimingFree(false)
+    }
+  }
 
   useEffect(() => {
     setQty(1)
@@ -273,9 +293,15 @@ export function ProductDetail() {
             </Button>
           </div>
 
-          <Button variant="secondary" size="lg" onClick={buyNow} className="mt-3 w-full">
-            <Zap className="h-5 w-5" /> Comprar ahora — descarga inmediata
-          </Button>
+          {product.price <= 0 ? (
+            <Button variant="secondary" size="lg" onClick={() => void claimFree()} loading={claimingFree} disabled={freeClaimed} className="mt-3 w-full">
+              <Download className="h-5 w-5" /> {freeClaimed ? 'Añadido a tu biblioteca ✓' : 'Descargar gratis'}
+            </Button>
+          ) : (
+            <Button variant="secondary" size="lg" onClick={buyNow} className="mt-3 w-full">
+              <Zap className="h-5 w-5" /> Comprar ahora — descarga inmediata
+            </Button>
+          )}
 
           {/* Datos del archivo digital */}
           <div className="mt-8 grid gap-3 sm:grid-cols-3">

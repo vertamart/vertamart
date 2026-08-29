@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { BadgeCheck, Check, Coins, Crown, Download, Globe, Lock, Package, Pencil, Save, Trash2, X, User as UserIcon, UserPlus, Video } from 'lucide-react'
+import { BadgeCheck, Check, Coins, Crown, Download, Globe, Lock, Package, Pencil, Save, Sparkles, Trash2, X, User as UserIcon, UserPlus, Video } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { THEMES, useTheme } from '../context/ThemeContext'
 import { useRegion } from '../context/RegionContext'
@@ -90,6 +90,17 @@ export function Account() {
     storeService.myPoints().then(setPoints).catch(() => setPoints({ points: 0, history: [] }))
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Si venimos del checkout (?tab=descargas), baja hasta la biblioteca.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'descargas') {
+      // Espera a que la biblioteca esté cargada para hacer scroll.
+      const t = setTimeout(() => {
+        document.querySelector('#mis-descargas')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 350)
+      return () => clearTimeout(t)
+    }
+  }, [library.length])
+
   // Biblioteca digital: productos comprados (Mis descargas).
   useEffect(() => {
     if (!user) return
@@ -100,16 +111,18 @@ export function Account() {
   const downloadFromLibrary = async (item: import('../api/services/store').LibraryItem) => {
     setDownloading(item.id)
     try {
-      const blob = await storeService.downloadProduct(item.id)
+      const { blob, filename } = await storeService.downloadProduct(item.id)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `vertamart-${item.slug}-licencia.txt`
+      a.download = filename
       document.body.appendChild(a)
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
       notify(`Descarga iniciada: ${item.name}`, 'info')
+      // Actualiza el contador local de descargas.
+      setLibrary((prev) => prev.map((it) => (it.id === item.id ? { ...it, downloads: it.downloads + 1 } : it)))
     } catch {
       notify('No tienes acceso a este archivo o hubo un error', 'info')
     } finally {
@@ -639,7 +652,7 @@ export function Account() {
         </section>
 
         {/* Mis descargas (biblioteca digital) */}
-        <section className="rounded-2xl border border-brand-100 bg-brand-50/40 p-6">
+        <section id="mis-descargas" className="rounded-2xl border border-brand-100 bg-brand-50/40 p-6 scroll-mt-24">
           <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900"><Download className="h-5 w-5 text-brand-600" /> Mis Descargas</h2>
           <p className="mt-1 text-sm text-slate-600">Todos tus productos digitales comprados. Descárgalos cuando quieras, con su licencia incluida.</p>
           {loadingLibrary ? (
@@ -651,19 +664,37 @@ export function Account() {
           ) : (
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               {library.map((item) => (
-                <div key={item.id} className="flex flex-col rounded-xl border border-slate-200 bg-white p-4">
+                <div key={item.id} className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-md">
                   <div className="flex items-center gap-3">
                     <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-slate-50">
                       <ProductImage src={item.image} fallback={item.category} name={item.name} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <Link to={`/producto/${item.slug}`} className="block truncate font-semibold text-slate-800 hover:text-brand-700">{item.name}</Link>
-                      <p className="text-sm text-slate-500">{item.fileType} · {item.fileSize}</p>
+                      <p className="text-sm text-slate-500">{item.fileType} · {item.fileSize} · <span className="font-semibold text-slate-600">v{item.version}</span></p>
                       <p className="text-xs text-slate-400">Comprado el {formatDate(item.purchasedAt)}</p>
                     </div>
                   </div>
+                  {item.hasUpdate && (
+                    <p className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700">
+                      <Sparkles className="h-3.5 w-3.5" /> Nueva versión disponible (v{item.version})
+                    </p>
+                  )}
+                  {item.licenseKey && (
+                    <button
+                      type="button"
+                      title="Licencia única de esta compra"
+                      onClick={() => { navigator.clipboard?.writeText(item.licenseKey!).catch(() => {}); notify('Licencia copiada al portapapeles', 'info') }}
+                      className="mt-2 w-fit rounded-md bg-slate-100 px-2 py-1 font-mono text-[11px] font-semibold text-slate-600 hover:bg-brand-50 hover:text-brand-700"
+                    >
+                      {item.licenseKey} · copiar
+                    </button>
+                  )}
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                    <span className="rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">{item.license}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">{item.license}</span>
+                      <span className="text-[11px] text-slate-400">{item.downloads} descargas</span>
+                    </div>
                     <Button size="sm" onClick={() => void downloadFromLibrary(item)} loading={downloading === item.id}>
                       <Download className="h-4 w-4" /> Descargar
                     </Button>

@@ -159,17 +159,27 @@ export function Checkout() {
         )}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           {user ? (
-            <Link to="/cuenta?tab=descargas" className="rounded-xl bg-brand-600 px-7 py-3.5 font-bold text-white transition-colors hover:bg-brand-700">
-              <span className="inline-flex items-center gap-2"><Download className="h-5 w-5" /> Ir a Mis descargas</span>
-            </Link>
+            <>
+              <Link to="/cuenta?tab=descargas" className="rounded-xl bg-brand-600 px-7 py-3.5 font-bold text-white transition-colors hover:bg-brand-700">
+                <span className="inline-flex items-center gap-2"><Download className="h-5 w-5" /> Ver mi biblioteca</span>
+              </Link>
+              <Link to="/cuenta?tab=descargas" className="rounded-xl border-2 border-brand-600 px-7 py-3.5 font-bold text-brand-700 transition-colors hover:bg-brand-50">
+                Descargar ahora
+              </Link>
+            </>
           ) : (
             <Link to="/productos" className="rounded-xl bg-brand-600 px-7 py-3.5 font-bold text-white hover:bg-brand-700">
               Seguir comprando
             </Link>
           )}
         </div>
+        {approved && (
+          <p className="mt-3 max-w-md text-sm text-slate-500">
+            Tu producto ya está disponible en tu biblioteca con su <strong>licencia única</strong>. Podrás descargarlo siempre que quieras y recibir actualizaciones según la licencia.
+          </p>
+        )}
         <p className="mt-2 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-700">
-          Demo: no se realizó ningún cargo real ni se almacenaron datos de tarjeta.
+          Pago de demostración: no se realizó ningún cargo real ni se almacenaron datos de tarjeta. El producto entregado es real y descargable.
         </p>
       </div>
     )
