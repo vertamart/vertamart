@@ -29,12 +29,14 @@ export function Publish() {
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('')
   const [oldPrice, setOldPrice] = useState('')
-  const [stock, setStock] = useState('10')
   const [image, setImage] = useState('')
   const [features, setFeatures] = useState('')
   const [badge, setBadge] = useState('')
   const [warranty, setWarranty] = useState('')
-  const [shipDays, setShipDays] = useState('2')
+  const [fileType, setFileType] = useState('ZIP')
+  const [fileSize, setFileSize] = useState('')
+  const [compatibility, setCompatibility] = useState('')
+  const [license, setLicense] = useState('Uso personal y comercial')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -85,11 +87,7 @@ export function Publish() {
     if (description.trim().length < 10) er.description = 'Describe tu producto (mínimo 10 caracteres)'
     const numPrice = Number(price)
     if (!Number.isFinite(numPrice) || numPrice <= 0) er.price = 'Ingresa un precio válido'
-    const numStock = Number(stock)
-    if (!Number.isInteger(numStock) || numStock < 0) er.stock = 'Stock no válido'
     if (image && !/^(https?:\/\/|data:image\/)/.test(image)) er.image = 'La imagen debe ser una URL o una foto válida'
-    const numShip = Number(shipDays)
-    if (!Number.isInteger(numShip) || numShip < 0 || numShip > 90) er.shipDays = 'Días de envío entre 0 y 90'
     if (warranty.trim().length > 80) er.warranty = 'La garantía es demasiado larga'
     setErrors(er)
     if (Object.keys(er).length > 0) return
@@ -103,12 +101,15 @@ export function Publish() {
         category,
         price: priceClp,
         oldPrice: oldPriceClp,
-        stock: numStock,
+        stock: 0,
         image: image.trim(),
         features: features.split('\n').map((f) => f.trim()).filter(Boolean),
         badge: badge || undefined,
         warranty: warranty.trim() || undefined,
-        shipDays: numShip,
+        fileType: fileType.trim() || 'ZIP',
+        fileSize: fileSize.trim() || '10 MB',
+        compatibility: compatibility.trim() || 'Windows · macOS · Linux',
+        license: license.trim() || 'Uso personal y comercial',
       })
       refresh() // el catálogo se recarga y el producto aparece sin recargar la página
       setDone(true)
@@ -153,15 +154,12 @@ export function Publish() {
           <textarea id="p-description" value={description} onChange={(e) => { setDescription(e.target.value); setErrors((x) => ({ ...x, description: '' })) }} rows={4} placeholder="Cuenta qué es y qué lo hace especial…" className={cn(inputCls('description'), 'h-auto py-3')} />
         ))}
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           {field('price', `Precio (${region.symbol})`, (
-            <input id="p-price" type="number" min="0" step="any" value={price} onChange={(e) => setPrice(e.target.value)} placeholder={region.code === 'CL' ? '59990' : '66'} className={inputCls('price')} />
+            <input id="p-price" type="number" min="0" step="any" value={price} onChange={(e) => setPrice(e.target.value)} placeholder={region.code === 'CL' ? '19990' : '22'} className={inputCls('price')} />
           ))}
           {field('oldPrice', 'Precio anterior (opcional)', (
-            <input id="p-oldPrice" type="number" min="0" step="any" value={oldPrice} onChange={(e) => setOldPrice(e.target.value)} placeholder={region.code === 'CL' ? '79990' : '88'} className={inputCls('')} />
-          ))}
-          {field('stock', 'Stock disponible', (
-            <input id="p-stock" type="number" min="0" value={stock} onChange={(e) => setStock(e.target.value)} className={inputCls('stock')} />
+            <input id="p-oldPrice" type="number" min="0" step="any" value={oldPrice} onChange={(e) => setOldPrice(e.target.value)} placeholder={region.code === 'CL' ? '29990' : '33'} className={inputCls('')} />
           ))}
         </div>
         <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
@@ -188,16 +186,32 @@ export function Publish() {
         ))}
 
         <div className="grid gap-4 sm:grid-cols-2">
+          {field('fileType', 'Formato del archivo', (
+            <select id="p-fileType" value={fileType} onChange={(e) => setFileType(e.target.value)} className={inputCls('')}>
+              {['ZIP', 'FIG', 'PSD', 'PDF', 'DOCX', 'PPTX', 'MP4', 'OTF', 'TTF', 'SVG', 'OBJ', 'CUBE', 'DNG', 'WAV', 'VSIX'].map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          ))}
+          {field('fileSize', 'Tamaño aproximado', (
+            <input id="p-fileSize" value={fileSize} onChange={(e) => setFileSize(e.target.value)} placeholder="Ej: 24 MB · 1.2 GB" className={inputCls('')} />
+          ))}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {field('compatibility', 'Compatibilidad', (
+            <input id="p-compatibility" value={compatibility} onChange={(e) => setCompatibility(e.target.value)} placeholder="Ej: Windows · macOS · Linux" className={inputCls('')} />
+          ))}
+          {field('license', 'Licencia', (
+            <select id="p-license" value={license} onChange={(e) => setLicense(e.target.value)} className={inputCls('')}>
+              <option value="Uso personal">Uso personal</option>
+              <option value="Uso personal y comercial">Uso personal y comercial</option>
+              <option value="Licencia extendida">Licencia extendida</option>
+            </select>
+          ))}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
           {field('warranty', 'Garantía (duración personalizada)', (
             <div>
               <input id="p-warranty" value={warranty} onChange={(e) => { setWarranty(e.target.value); setErrors((x) => ({ ...x, warranty: '' })) }} placeholder="Ej: 12 meses · 2 años · Garantía de por vida" className={inputCls('warranty')} />
-              <p className="mt-1 text-xs text-slate-400">Cuánto cubre la garantía de tu producto.</p>
-            </div>
-          ))}
-          {field('shipDays', 'Tiempo normal de envío (días)', (
-            <div>
-              <input id="p-shipDays" type="number" min="0" max="90" value={shipDays} onChange={(e) => { setShipDays(e.target.value); setErrors((x) => ({ ...x, shipDays: '' })) }} className={inputCls('shipDays')} />
-              <p className="mt-1 text-xs text-slate-400">En cuántos días hábiles llega normalmente.</p>
+              <p className="mt-1 text-xs text-slate-400">Cuánto cubre la garantía de tu producto digital.</p>
             </div>
           ))}
         </div>

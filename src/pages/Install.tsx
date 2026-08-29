@@ -1,7 +1,7 @@
 import { Download, MonitorDown, ShieldCheck, Smartphone } from 'lucide-react'
 import { useI18n } from '../context/I18nContext'
 
-const VERSION = 'v1.2.0'
+const VERSION = 'v1.3.0'
 const PUBLIC_APP_DOWNLOAD = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL
 const PUBLIC_ANDROID_DOWNLOAD = import.meta.env.VITE_ANDROID_DOWNLOAD_URL
 

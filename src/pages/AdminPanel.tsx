@@ -551,7 +551,7 @@ export function AdminPanel() {
     <p className="mt-1 text-2xl font-extrabold text-green-900">${(payout.balance ?? 0).toFixed(2)}</p>
   </div>
   <div className="rounded-xl bg-slate-50 p-4 sm:col-span-2">
-    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cuenta receptora (envíos de ventas y suscripciones)</p>
+    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cuenta receptora (ingresos de ventas y suscripciones)</p>
     <p className="mt-1 text-sm text-slate-700">{payout.accountRef} · Pagos vía <strong>{payout.provider}</strong></p>
   </div>
 </div>

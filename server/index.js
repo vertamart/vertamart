@@ -99,6 +99,21 @@ function slugify(text) {
     .slice(0, 60)
 }
 
+/** Valores digitales por defecto según la categoría (productos de la tienda). */
+function digitalDefaults(category) {
+  const map = {
+    plantillas: { fileType: 'ZIP', fileSize: '25 MB', compatibility: 'Windows · macOS · Linux' },
+    presets: { fileType: 'DNG', fileSize: '6 MB', compatibility: 'Lightroom Classic · CC · Mobile' },
+    iconos: { fileType: 'SVG', fileSize: '8 MB', compatibility: 'Figma · Web · Sketch' },
+    fuentes: { fileType: 'OTF', fileSize: '3 MB', compatibility: 'Windows · macOS · Linux · Web' },
+    'modelos-3d': { fileType: 'OBJ', fileSize: '120 MB', compatibility: 'Blender · Maya · Unreal · Unity' },
+    plugins: { fileType: 'ZIP', fileSize: '10 MB', compatibility: 'Figma · VS Code · Canva' },
+    cursos: { fileType: 'MP4', fileSize: '3 GB', compatibility: 'Reproductor de vídeo' },
+    packs: { fileType: 'ZIP', fileSize: '500 MB', compatibility: 'Windows · macOS · Linux' },
+  }
+  return map[category] ?? { fileType: 'ZIP', fileSize: '10 MB', compatibility: 'Windows · macOS · Linux' }
+}
+
 function productToApi(row) {
   return {
     id: String(row.id),
@@ -115,8 +130,17 @@ function productToApi(row) {
     description: row.description,
     features: safeJson(row.features, []),
     warranty: row.warranty ?? null,
-    shipDays: row.ship_days,
-    colors: safeJson(row.colors, ['#16a34a']),
+    fileType: row.file_type ?? digitalDefaults(row.category).fileType,
+    fileSize: row.file_size ?? digitalDefaults(row.category).fileSize,
+    compatibility: row.compatibility ?? digitalDefaults(row.category).compatibility,
+    license: row.license ?? 'Uso personal y comercial',
+    downloads: row.downloads ?? 0,
+    includes: safeJson(row.includes, []),
+    requirements: safeJson(row.requirements, []),
+    updates: row.updates ?? 'Actualizaciones de por vida',
+    support: row.support ?? 'Soporte por correo',
+    shipDays: row.ship_days ?? 0,
+    colors: safeJson(row.colors, []),
     image: row.image,
     images: safeJson(row.images, row.image ? [row.image] : []),
     productCode: row.product_code ?? null,

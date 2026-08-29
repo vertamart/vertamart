@@ -206,7 +206,7 @@ function FilterPanel(props: {
 
       <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" checked={inStock} onChange={(e) => setInStock(e.target.checked)} className="h-4 w-4 accent-brand-600" />
-        Solo productos en stock
+Solo productos con descarga disponible
       </label>
 
       <button onClick={onClear} className="text-sm font-semibold text-brand-700 hover:underline">Limpiar todo</button>

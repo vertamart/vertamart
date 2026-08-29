@@ -4,12 +4,14 @@ import type { CategoryId } from '../data/products'
 import { useCatalog } from '../context/CatalogContext'
 
 const catIcons: Record<CategoryId, string> = {
-  audio: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm-3-8h6m-3-4v5M9 13a3 3 0 0 0 6 0',
-  wearables: 'M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 6h10M12 17h.01',
-  teclado: 'M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8zm5 2v.01M12 10v.01M16 10v.01M8 14h8',
-  mouse: 'M9 4h6a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3zm3 0v5M12 12v5',
-  carga: 'M13 2L4.5 12.5H11l-1 8L18.5 10H12l1-8z',
-  monitor: 'M4 5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm6 12h4v3h-4z',
+  plantillas: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm0 2l6 6h-6V4zM9 13h6M9 17h4',
+  presets: 'M3 17l5-5 4 4 6-7 3 3V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12z',
+  iconos: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zm7 12l.9 2.6L22.5 18l-2.6.9L19 21.5l-.9-2.6L15.5 18l2.6-.9L19 15z',
+  fuentes: 'M4 7V5h16v2M12 5v14m-4 0h8',
+  'modelos-3d': 'M12 2l8 4.5v9L12 20l-8-4.5v-9L12 2zm0 0v9m8-4.5L12 11M4 6.5L12 11m0 9v-9',
+  plugins: 'M9 3H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm10 10h-4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM5 15h4v4H5z',
+  cursos: 'M12 5l8 3-8 3-8-3 8-3zm-8 5v5c0 1.1 3.6 3 8 3s8-1.9 8-3v-5M12 14v5',
+  packs: 'M21 8l-9-5-9 5v8l9 5 9-5V8zm-9-3v4m-7 2l7 4 7-4',
 }
 
 export function Categories() {
@@ -24,7 +26,7 @@ export function Categories() {
       <header className="text-center">
         <p className="text-sm font-semibold uppercase tracking-wide text-brand-600">Explora</p>
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Nuestras categorías</h1>
-        <p className="mx-auto mt-2 max-w-xl text-slate-500">Encuentra exactamente lo que buscas dentro de nuestras colecciones de tecnología.</p>
+        <p className="mx-auto mt-2 max-w-xl text-slate-500">Recursos digitales listos para descargar al instante: plantillas, presets, iconos, fuentes y más.</p>
       </header>
 
       <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">

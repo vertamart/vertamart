@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { CheckCircle2, CreditCard, Landmark, Lock, MapPin, Package, ShoppingBag, Truck, User, Wallet } from 'lucide-react'
+import { CheckCircle2, CreditCard, Download, Landmark, Lock, Package, ShoppingBag, User, Wallet } from 'lucide-react'
 import { useStore } from '../context/StoreContext'
 import { useCatalog } from '../context/CatalogContext'
 import { useAuth } from '../context/AuthContext'
@@ -13,13 +13,6 @@ import { Button } from '../components/ui/Button'
 import { formatPrice } from '../lib/currency'
 import { useRegion } from '../context/RegionContext'
 import { cn } from '../lib/cn'
-
-const FREE_SHIPPING_THRESHOLD = 49990
-
-const SHIPPING_OPTIONS = [
-  { id: 'standard', label: 'Envío estándar', days: '3-5 días', cost: 0 },
-  { id: 'express', label: 'Envío exprés', days: '24-48 h', cost: 4990 },
-]
 
 const INSTALLMENTS = [1, 3, 6, 12]
 
@@ -39,16 +32,9 @@ const BANK_DETAILS = {
 interface FormState {
   nombre: string
   email: string
-  telefono: string
-  direccion: string
-  ciudad: string
-  region: string
-  cp: string
 }
 
-const initialForm: FormState = {
-  nombre: '', email: '', telefono: '', direccion: '', ciudad: '', region: '', cp: '',
-}
+const initialForm: FormState = { nombre: '', email: '' }
 
 /** Validación Luhn para números de tarjeta. */
 function luhnValid(digits: string): boolean {
@@ -79,7 +65,6 @@ export function Checkout() {
   const { user } = useAuth()
   const [form, setForm] = useState<FormState>(initialForm)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
-  const [shipping, setShipping] = useState('standard')
   const [coupon] = usePersistentState<{ code: string; percent: number } | null>('verta.coupon', null)
   const [pointsAvailable, setPointsAvailable] = useState(0)
   const [redeemPoints, setRedeemPoints] = useState(0)
@@ -116,9 +101,8 @@ export function Checkout() {
   const discount = coupon ? Math.round(cartSubtotal * (coupon.percent / 100)) : 0
   const maxRedeem = Math.max(0, Math.min(pointsAvailable, cartSubtotal - discount))
   const pointsDiscount = Math.min(redeemPoints, maxRedeem)
-  const shipOpt = SHIPPING_OPTIONS.find((s) => s.id === shipping)!
-  const shippingCost = cartSubtotal - discount - pointsDiscount >= FREE_SHIPPING_THRESHOLD ? 0 : shipOpt.cost
-  const total = Math.max(0, cartSubtotal - discount - pointsDiscount + shippingCost)
+  // Tienda 100% digital: sin gastos de envío.
+  const total = Math.max(0, cartSubtotal - discount - pointsDiscount)
   const installmentPrice = installments > 1 ? Math.ceil(total / installments) : total
 
   if (done) {
@@ -129,11 +113,11 @@ export function Checkout() {
           {approved ? <CheckCircle2 className="h-10 w-10 text-brand-600" /> : <ClockIcon />}
         </div>
         <h1 className="mt-6 text-3xl font-extrabold text-slate-900">
-          {approved ? '¡Pago aprobado!' : 'Pedido recibido'}
+          {approved ? '¡Compra completada!' : 'Pedido recibido'}
         </h1>
         <p className="mt-3 text-slate-500">
-          Tu pedido <strong>{orderId}</strong>{' '}
-          {approved ? 'ha sido pagado correctamente.' : 'quedó pendiente de confirmación de la transferencia.'}
+          Tu pedido digital <strong>{orderId}</strong>{' '}
+          {approved ? 'ha sido pagado correctamente. Tus descargas ya están disponibles.' : 'quedó pendiente de confirmación de la transferencia. Se liberarán al aprobarse.'}
         </p>
         {result && (
           <p className="mt-2 rounded-xl bg-slate-100 px-4 py-2 font-mono text-sm text-slate-600">
@@ -155,14 +139,22 @@ export function Checkout() {
             </div>
           )
         ) : (
-          <p className="mt-2 text-sm text-slate-500">Recibirás un correo con los detalles de envío.</p>
+          <p className="mt-2 text-sm text-slate-500">Recibirás un correo con el enlace de tu biblioteca digital.</p>
         )}
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          {user ? (
+            <Link to="/cuenta?tab=descargas" className="rounded-xl bg-brand-600 px-7 py-3.5 font-bold text-white transition-colors hover:bg-brand-700">
+              <span className="inline-flex items-center gap-2"><Download className="h-5 w-5" /> Ir a Mis descargas</span>
+            </Link>
+          ) : (
+            <Link to="/productos" className="rounded-xl bg-brand-600 px-7 py-3.5 font-bold text-white hover:bg-brand-700">
+              Seguir comprando
+            </Link>
+          )}
+        </div>
         <p className="mt-2 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-700">
           Demo: no se realizó ningún cargo real ni se almacenaron datos de tarjeta.
         </p>
-        <Link to="/productos" className="mt-8 rounded-xl bg-brand-600 px-7 py-3.5 font-bold text-white hover:bg-brand-700">
-          Seguir comprando
-        </Link>
       </div>
     )
   }
@@ -197,11 +189,6 @@ export function Checkout() {
     const er: Partial<Record<keyof FormState, string>> = {}
     if (form.nombre.trim().length < 3) er.nombre = 'Ingresa tu nombre completo'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) er.email = 'Correo no válido'
-    if (form.telefono.trim().length < 8) er.telefono = 'Teléfono no válido'
-    if (form.direccion.trim().length < 5) er.direccion = 'Ingresa tu dirección'
-    if (form.ciudad.trim().length < 2) er.ciudad = 'Ingresa tu ciudad'
-    if (form.region.trim().length < 2) er.region = 'Ingresa tu región'
-    if (form.cp.trim().length < 3) er.cp = 'Ingresa tu código postal'
     setErrors(er)
     return Object.keys(er).length === 0
   }
@@ -262,7 +249,7 @@ export function Checkout() {
             items: items.map(({ product, qty }) => ({ productId: product.id, name: product.name, price: product.price, qty })),
             subtotal: cartSubtotal,
             discount,
-            shipping: shippingCost,
+            shipping: 0,
             total,
             method,
             transactionId: res.transactionId,
@@ -270,11 +257,6 @@ export function Checkout() {
             paymentStatus: res.status,
             customerName: form.nombre,
             customerEmail: form.email,
-            customerPhone: form.telefono,
-            address: form.direccion,
-            city: form.ciudad,
-            region: form.region,
-            postalCode: form.cp,
             redeemPoints: pointsDiscount,
           })
           .then((saved) => {
@@ -344,45 +326,24 @@ export function Checkout() {
 
       <form onSubmit={submit} noValidate className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
+          {/* Entrega digital */}
+          <section className="rounded-2xl border border-brand-100 bg-brand-50/60 p-6">
+            <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+              <Download className="h-5 w-5 text-brand-600" /> Entrega digital
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              No hay envíos ni direcciones: en cuanto se confirme tu pago, tus productos digitales se liberan al instante en tu <strong>biblioteca (Mis descargas)</strong> con su licencia incluida.
+            </p>
+          </section>
+
           {/* Datos personales */}
           <section className="rounded-2xl border border-slate-200 bg-white p-6">
             <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900"><User className="h-5 w-5 text-brand-600" /> Datos personales</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               {field('nombre', 'Nombre completo', 'Juan Pérez')}
               {field('email', 'Correo electrónico', 'juan@correo.com', { type: 'email' })}
-              {field('telefono', 'Teléfono', '+56 9 1234 5678')}
             </div>
-          </section>
-
-          {/* Dirección */}
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900"><MapPin className="h-5 w-5 text-brand-600" /> Dirección de envío</h2>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              {field('direccion', 'Dirección', 'Calle de la Princesa 24', { className: 'sm:col-span-2' })}
-              {field('ciudad', 'Ciudad', 'Madrid')}
-              {field('region', 'Región', 'Metropolitana')}
-              {field('cp', 'Código postal', '7500000')}
-            </div>
-          </section>
-
-          {/* Método de envío */}
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900"><Truck className="h-5 w-5 text-brand-600" /> Método de envío</h2>
-            <div className="mt-4 space-y-3">
-              {SHIPPING_OPTIONS.map((s) => {
-                const free = cartSubtotal - discount >= FREE_SHIPPING_THRESHOLD && s.id === 'standard'
-                return (
-                  <label key={s.id} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-colors', shipping === s.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-brand-300')}>
-                    <input type="radio" name="shipping" value={s.id} checked={shipping === s.id} onChange={(e) => setShipping(e.target.value)} className="h-4 w-4 accent-brand-600" />
-                    <div className="flex-1">
-                      <p className="font-semibold text-slate-800">{s.label}</p>
-                      <p className="text-sm text-slate-500">{s.days}</p>
-                    </div>
-                    <span className="font-bold text-slate-900">{free || s.cost === 0 ? 'Gratis' : formatPrice(s.cost, region)}</span>
-                  </label>
-                )
-              })}
-            </div>
+            <p className="mt-3 text-xs text-slate-400">A este correo enviaremos la confirmación y el enlace privado de seguimiento.</p>
           </section>
 
           {/* Método de pago */}
@@ -468,7 +429,7 @@ export function Checkout() {
                     <div><dt className="inline text-slate-400">Referencia: </dt><dd className="inline font-bold">{orderId}</dd></div>
                   </dl>
                 )}
-                <p className="mt-3 text-xs">El pedido quedará <strong>pendiente</strong> hasta confirmar la transferencia (24-48 h hábiles). Cuando el dinero llegue, el administrador lo aprueba y recibirás un correo.</p>
+                <p className="mt-3 text-xs">El pedido quedará <strong>pendiente</strong> hasta confirmar la transferencia (24-48 h hábiles). Cuando el dinero llegue, el administrador lo aprueba y recibirás un correo con tus descargas.</p>
               </div>
             )}
 
@@ -497,7 +458,7 @@ export function Checkout() {
           </ul>
 
           <dl className="mt-5 space-y-2 border-t border-slate-100 pt-4 text-sm">
-            <div className="flex justify-between"><dt className="text-slate-500">Subtotal</dt><dd className="font-semibold">{formatPrice(cartSubtotal, region)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Productos</dt><dd className="font-semibold">{formatPrice(cartSubtotal, region)}</dd></div>
             {discount > 0 && <div className="flex justify-between text-brand-700"><dt>Cupón {coupon?.code}</dt><dd className="font-semibold">-{formatPrice(discount, region)}</dd></div>}
             {user && pointsAvailable > 0 && (
               <div className="flex items-center justify-between gap-3 rounded-xl bg-green-50 px-3 py-2">
@@ -514,14 +475,18 @@ export function Checkout() {
               </div>
             )}
             {pointsDiscount > 0 && <div className="flex justify-between text-green-700"><dt>Puntos canjeados</dt><dd className="font-semibold">-{formatPrice(pointsDiscount, region)}</dd></div>}
-            <div className="flex justify-between"><dt className="text-slate-500">Envío</dt><dd className="font-semibold">{shippingCost === 0 ? <span className="text-brand-600">Gratis</span> : formatPrice(shippingCost, region)}</dd></div>
             <div className="flex justify-between border-t border-slate-100 pt-3 text-lg"><dt className="font-bold">Total</dt><dd className="font-extrabold">{formatPrice(total, region)}</dd></div>
             {method === 'card' && installments > 1 && (
               <div className="flex justify-between text-xs text-slate-500"><dt>{installments} cuotas sin interés</dt><dd>{formatPrice(installmentPrice, region)}/mes</dd></div>
             )}
           </dl>
 
-          <Button type="submit" size="lg" loading={processing} className="mt-6 w-full" disabled={processing}>
+          <div className="mt-4 flex items-start gap-2 rounded-xl bg-green-50 px-3 py-2.5 text-xs text-green-700">
+            <Download className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>Entrega <strong>100% digital</strong>: descargas inmediatas con licencia, sin envíos ni costes de transporte.</p>
+          </div>
+
+          <Button type="submit" size="lg" loading={processing} className="mt-5 w-full" disabled={processing}>
             {processing ? 'Procesando pago...' : method === 'transfer' ? `Confirmar pedido` : `Pagar ${formatPrice(total, region)}`}
           </Button>
           <button type="button" onClick={() => navigate('/carrito')} className="mt-3 w-full text-center text-sm text-slate-400 hover:text-slate-600">

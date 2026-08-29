@@ -359,8 +359,18 @@ function productToApi(row, ownerVerified = false) {
     badge: row.badge ?? undefined,
     description: row.description,
     features: safeJson(row.features, []),
-    shipDays: row.ship_days,
-    colors: safeJson(row.colors, ['#16a34a']),
+    // Producto digital: formato, tamaño, compatibilidad, licencia, descargas...
+    fileType: row.file_type ?? digitalDefaults(row.category).fileType,
+    fileSize: row.file_size ?? digitalDefaults(row.category).fileSize,
+    compatibility: row.compatibility ?? digitalDefaults(row.category).compatibility,
+    license: row.license ?? 'Uso personal y comercial',
+    downloads: row.downloads ?? 0,
+    includes: safeJson(row.includes, []),
+    requirements: safeJson(row.requirements, []),
+    updates: row.updates ?? 'Actualizaciones de por vida',
+    support: row.support ?? 'Soporte por correo',
+    shipDays: row.ship_days ?? 0,
+    colors: safeJson(row.colors, []),
     image: row.image,
     images: safeJson(row.images, row.image ? [row.image] : []),
     productCode: row.product_code ?? null,
@@ -370,6 +380,21 @@ function productToApi(row, ownerVerified = false) {
     ownerName: row.owner_name ?? null,
     owner: row.owner_id ? { id: row.owner_id, name: row.owner_name ?? 'Vendedor', verified: ownerVerified } : null,
   }
+}
+
+/** Valores digitales por defecto según la categoría (productos de la tienda). */
+function digitalDefaults(category) {
+  const map = {
+    plantillas: { fileType: 'ZIP', fileSize: '25 MB', compatibility: 'Windows · macOS · Linux' },
+    presets: { fileType: 'DNG', fileSize: '6 MB', compatibility: 'Lightroom Classic · CC · Mobile' },
+    iconos: { fileType: 'SVG', fileSize: '8 MB', compatibility: 'Figma · Web · Sketch' },
+    fuentes: { fileType: 'OTF', fileSize: '3 MB', compatibility: 'Windows · macOS · Linux · Web' },
+    'modelos-3d': { fileType: 'OBJ', fileSize: '120 MB', compatibility: 'Blender · Maya · Unreal · Unity' },
+    plugins: { fileType: 'ZIP', fileSize: '10 MB', compatibility: 'Figma · VS Code · Canva' },
+    cursos: { fileType: 'MP4', fileSize: '3 GB', compatibility: 'Reproductor de vídeo' },
+    packs: { fileType: 'ZIP', fileSize: '500 MB', compatibility: 'Windows · macOS · Linux' },
+  }
+  return map[category] ?? { fileType: 'ZIP', fileSize: '10 MB', compatibility: 'Windows · macOS · Linux' }
 }
 
 async function publicProfile(row, viewerId) {
@@ -715,6 +740,10 @@ const handlers = {
     const image = String(body?.image ?? '').trim()
     const features = Array.isArray(body?.features) ? body.features.map(String) : []
     const badge = body?.badge ? String(body.badge) : null
+    const fileType = String(body?.fileType ?? 'ZIP').trim() || 'ZIP'
+    const fileSize = String(body?.fileSize ?? '10 MB').trim() || '10 MB'
+    const compatibility = String(body?.compatibility ?? 'Windows · macOS · Linux').trim()
+    const license = String(body?.license ?? 'Uso personal y comercial').trim()
     const productCode = `VT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
 
     if (name.length < 3) return fail(400, 'El nombre debe tener al menos 3 caracteres', 'INVALID_NAME')
@@ -729,9 +758,9 @@ const handlers = {
       slug = `${base}-${Date.now().toString(36).slice(-4)}${n++}`
     }
     const info = await db.run(
-      `INSERT INTO products (owner_id, name, slug, category, price, old_price, stock, badge, description, features, image, product_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      user.id, name, slug, category, price, oldPrice, stock, badge, description, JSON.stringify(features), image, productCode,
+      `INSERT INTO products (owner_id, name, slug, category, price, old_price, stock, badge, description, features, image, product_code, file_type, file_size, compatibility, license)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      user.id, name, slug, category, price, oldPrice, stock, badge, description, JSON.stringify(features), image, productCode, fileType, fileSize, compatibility, license,
     )
     const row = await db.get('SELECT * FROM products WHERE id = ?', info.lastId)
     return json(productToApi(row), 201)
@@ -1069,7 +1098,8 @@ const handlers = {
     const customerEmail = String(body?.customerEmail ?? '').trim().toLowerCase()
     const subtotal = Number(body?.subtotal ?? 0)
     const discount = Number(body?.discount ?? 0)
-    const shipping = Number(body?.shipping ?? 0)
+    // Tienda 100% digital: no hay gastos de envío.
+    const shipping = 0
     const total = Number(body?.total ?? 0)
     const method = String(body?.method ?? 'card')
     const transactionId = body?.transactionId ? String(body.transactionId) : null
@@ -1158,7 +1188,7 @@ const handlers = {
       env,
       customerEmail,
       `Vertamart — confirmación de tu pedido #${order.lastId}`,
-      `<p>Hola ${customerName},</p><p>¡Gracias por tu compra! Tu pedido <strong>#${order.lastId}</strong> quedó registrado.</p><ul>${itemsHtml}</ul><p>Total: <strong>${total.toLocaleString('es-CL')}</strong> · Envío: ${shipping.toLocaleString('es-CL')} · Descuento: ${discount.toLocaleString('es-CL')}</p><p>Consulta el estado de tu pedido en este enlace privado: <a href="${trackingUrl}">${trackingUrl}</a></p>`,
+      `<p>Hola ${customerName},</p><p>¡Gracias por tu compra! Tu pedido digital <strong>#${order.lastId}</strong> quedó registrado.</p><ul>${itemsHtml}</ul><p>Total: <strong>${total.toLocaleString('es-CL')}</strong> · Descuento: ${discount.toLocaleString('es-CL')}</p><p>Tus productos digitales se liberarán automáticamente en tu biblioteca (<em>Mis descargas</em>) al confirmarse el pago.</p><p>Consulta el estado de tu pedido en este enlace privado: <a href="${trackingUrl}">${trackingUrl}</a></p>`,
     )
     // Si el correo no se pudo enviar (plan gratuito sin dominio verificado),
     // el frontend muestra el enlace de seguimiento en pantalla en vez de prometer un correo.
@@ -1468,6 +1498,81 @@ const handlers = {
     return json({ points: row?.points ?? 0, history: history.map((h) => ({ id: h.id, delta: h.delta, reason: h.reason, refType: h.ref_type, createdAt: h.created_at })) })
   },
 
+  // BIBLIOTECA DIGITAL: productos comprados por el usuario (con acceso y descarga)
+  async myLibrary(user) {
+    const rows = await db.all(
+      `SELECT DISTINCT p.id, p.name, p.slug, p.category, p.image, p.file_type, p.file_size, p.compatibility, p.license,
+              p.downloads, p.includes, p.requirements, p.updates, p.support, p.brand, p.price,
+              o.id AS order_id, o.status AS order_status, o.created_at AS purchased_at
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       JOIN products p ON p.id = oi.product_id
+       WHERE o.user_id = ? AND o.status IN ('paid', 'delivered')
+       ORDER BY o.created_at DESC`,
+      user.id,
+    )
+    return json({
+      items: rows.map((r) => ({
+        id: String(r.id),
+        name: r.name,
+        slug: r.slug,
+        brand: r.brand,
+        category: r.category,
+        price: r.price,
+        image: r.image,
+        fileType: r.file_type ?? digitalDefaults(r.category).fileType,
+        fileSize: r.file_size ?? digitalDefaults(r.category).fileSize,
+        compatibility: r.compatibility ?? digitalDefaults(r.category).compatibility,
+        license: r.license ?? 'Uso personal y comercial',
+        downloads: r.downloads ?? 0,
+        includes: safeJson(r.includes, []),
+        requirements: safeJson(r.requirements, []),
+        updates: r.updates ?? 'Actualizaciones de por vida',
+        support: r.support ?? 'Soporte por correo',
+        orderId: r.order_id,
+        purchasedAt: r.purchased_at,
+      })),
+    })
+  },
+
+  // Descarga de un producto comprado: genera un archivo de licencia de muestra.
+  // (Arquitectura lista para conectar un bucket/almacenamiento real más adelante.)
+  async downloadProduct(user, id, env) {
+    const row = await db.get(
+      `SELECT DISTINCT p.id, p.name, p.slug, p.file_type, p.file_size, p.license, p.downloads, p.category
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       JOIN products p ON p.id = oi.product_id
+       WHERE o.user_id = ? AND o.status IN ('paid', 'delivered') AND p.id = ?`,
+      user.id, Number(id),
+    )
+    if (!row) return fail(403, 'No tienes acceso a este archivo', 'FORBIDDEN')
+    // Incrementa el contador de descargas del producto.
+    await db.run('UPDATE products SET downloads = downloads + 1 WHERE id = ?', row.id)
+    // Archivo de muestra: licencia + metadatos del producto.
+    const date = new Date().toISOString().slice(0, 10)
+    const body = [
+      `VERTAMART — PRODUCTO DIGITAL`,
+      `=============================`,
+      `Producto: ${row.name}`,
+      `Referencia: ${row.slug}`,
+      `Formato: ${row.file_type ?? 'ZIP'}`,
+      `Tamaño aproximado: ${row.file_size ?? '10 MB'}`,
+      `Licencia: ${row.license ?? 'Uso personal y comercial'}`,
+      `Fecha de descarga: ${date}`,
+      ``,
+      `Gracias por tu compra. Guarda este archivo como comprobante de tu licencia.`,
+      `Vertamart — vertamart.pages.dev`,
+    ].join('\n')
+    return new Response(body, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Disposition': `attachment; filename="vertamart-${row.slug}-licencia.txt"`,
+        ...CORS,
+      },
+    })
+  },
+
   // REEMBOLSO (parcial / total) desde el Panel + aviso por correo
   async adminRefundOrder(id, body, env) {
     const order = await db.get('SELECT * FROM orders WHERE id = ?', id)
@@ -1651,6 +1756,8 @@ const ROUTES = [
   ['DELETE', /^\/api\/users\/(\d+)\/follow$/, (u, b, req, m) => handlers.unfollow(u, Number(m[1])), true, false],
   ['GET', /^\/api\/users\/(\d+)$/, (u, b, req, m) => handlers.getUser(u, Number(m[1])), false, false],
   ['GET', /^\/api\/me\/points$/, (u) => handlers.mePoints(u), true, false],
+  ['GET', /^\/api\/me\/library$/, (u) => handlers.myLibrary(u), true, false],
+  ['GET', /^\/api\/me\/library\/(\d+)\/download$/, (u, b, req, m, env) => handlers.downloadProduct(u, m[1], env), true, false],
   ['POST', /^\/api\/push\/subscribe$/, (u, b) => handlers.pushSubscribe(u, b), true, false],
   ['POST', /^\/api\/push\/unsubscribe$/, (u, b) => handlers.pushUnsubscribe(u, b), true, false],
   ['POST', /^\/api\/admin\/push\/send$/, (u, b, req, m, env) => handlers.adminSendPush(b, env), true, true],

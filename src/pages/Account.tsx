@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { BadgeCheck, Check, Coins, Crown, Globe, Lock, Package, Pencil, Save, Trash2, X, User as UserIcon, UserPlus, Video } from 'lucide-react'
+import { BadgeCheck, Check, Coins, Crown, Download, Globe, Lock, Package, Pencil, Save, Trash2, X, User as UserIcon, UserPlus, Video } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { THEMES, useTheme } from '../context/ThemeContext'
 import { useRegion } from '../context/RegionContext'
@@ -14,6 +14,7 @@ import { Button } from '../components/ui/Button'
 import { ProductImage } from '../components/ui/ProductImage'
 import { ImageUpload } from '../components/ui/ImageUpload'
 import { authService, type VerificationChecks } from '../api/services/auth'
+import { formatDate } from '../lib/format'
 import { cn } from '../lib/cn'
 
 const BADGES = [
@@ -66,6 +67,9 @@ export function Account() {
   const [subCardError, setSubCardError] = useState('')
   const [verification, setVerification] = useState<{ verified: boolean; checks: VerificationChecks } | null>(null)
   const [payoutInfo, setPayoutInfo] = useState<{ provider: string; label: string; accountRef: string; paypalEmail?: string | null } | null>(null)
+  const [library, setLibrary] = useState<import('../api/services/store').LibraryItem[]>([])
+  const [loadingLibrary, setLoadingLibrary] = useState(false)
+  const [downloading, setDownloading] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -85,6 +89,33 @@ export function Account() {
     if (!user) return
     storeService.myPoints().then(setPoints).catch(() => setPoints({ points: 0, history: [] }))
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Biblioteca digital: productos comprados (Mis descargas).
+  useEffect(() => {
+    if (!user) return
+    setLoadingLibrary(true)
+    storeService.myLibrary().then((r) => setLibrary(r.items)).catch(() => setLibrary([])).finally(() => setLoadingLibrary(false))
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const downloadFromLibrary = async (item: import('../api/services/store').LibraryItem) => {
+    setDownloading(item.id)
+    try {
+      const blob = await storeService.downloadProduct(item.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `vertamart-${item.slug}-licencia.txt`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      notify(`Descarga iniciada: ${item.name}`, 'info')
+    } catch {
+      notify('No tienes acceso a este archivo o hubo un error', 'info')
+    } finally {
+      setDownloading(null)
+    }
+  }
 
   const applyCardFormat = (k: 'numero' | 'vencimiento' | 'cvv') => (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value
@@ -607,6 +638,42 @@ export function Account() {
           )}
         </section>
 
+        {/* Mis descargas (biblioteca digital) */}
+        <section className="rounded-2xl border border-brand-100 bg-brand-50/40 p-6">
+          <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900"><Download className="h-5 w-5 text-brand-600" /> Mis Descargas</h2>
+          <p className="mt-1 text-sm text-slate-600">Todos tus productos digitales comprados. Descárgalos cuando quieras, con su licencia incluida.</p>
+          {loadingLibrary ? (
+            <p className="mt-4 text-sm text-slate-400">Cargando tu biblioteca…</p>
+          ) : library.length === 0 ? (
+            <div className="mt-4 rounded-xl border border-dashed border-brand-200 p-8 text-center text-sm text-slate-500">
+              Aún no tienes productos en tu biblioteca. <Link to="/productos" className="font-bold text-brand-700 hover:underline">Explora el catálogo digital</Link>.
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {library.map((item) => (
+                <div key={item.id} className="flex flex-col rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-slate-50">
+                      <ProductImage src={item.image} fallback={item.category} name={item.name} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <Link to={`/producto/${item.slug}`} className="block truncate font-semibold text-slate-800 hover:text-brand-700">{item.name}</Link>
+                      <p className="text-sm text-slate-500">{item.fileType} · {item.fileSize}</p>
+                      <p className="text-xs text-slate-400">Comprado el {formatDate(item.purchasedAt)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                    <span className="rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700">{item.license}</span>
+                    <Button size="sm" onClick={() => void downloadFromLibrary(item)} loading={downloading === item.id}>
+                      <Download className="h-4 w-4" /> Descargar
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         {/* Mis productos */}
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <div className="flex items-center justify-between">
@@ -632,7 +699,7 @@ export function Account() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <Link to={`/producto/${p.slug}`} className="block truncate font-semibold text-slate-800 hover:text-brand-700">{p.name}</Link>
-                    <p className="text-sm text-slate-500">{formatPrice(p.price, region)} · {p.stock} en stock</p>
+                    <p className="text-sm text-slate-500">{formatPrice(p.price, region)} · {p.fileType ?? 'Digital'}</p>
                   </div>
                   <span className={cn('rounded-full px-2.5 py-1 text-xs font-bold', p.status === 'hidden' ? 'bg-slate-100 text-slate-500' : 'bg-green-50 text-green-700')}>
                     {p.status === 'hidden' ? 'Oculto' : 'Activo'}

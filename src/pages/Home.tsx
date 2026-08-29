@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CreditCard, Headphones, Rocket, ShieldCheck, Sparkles, Truck, Star, X } from 'lucide-react'
+import { ArrowRight, CreditCard, Download, FileArchive, Headphones, Rocket, ShieldCheck, Sparkles, Star, X } from 'lucide-react'
 import { useCatalog } from '../context/CatalogContext'
 import { CatalogError, CatalogSkeleton } from '../components/ui/CatalogState'
 import { ProductCard } from '../components/ui/ProductCard'
@@ -27,6 +27,8 @@ export function Home() {
 
   const featured = products.filter((p) => p.badge === 'top' || p.badge === 'popular').slice(0, 4)
   const onSale = products.filter((p) => p.oldPrice).slice(0, 4)
+  const freeProducts = products.filter((p) => p.price <= 5990).slice(0, 4)
+  const premiumProducts = products.filter((p) => p.price >= 30000).slice(0, 4)
 
   if (status === 'error' && products.length === 0) {
     return <CatalogError message={error ?? t('cat.loadError')} onRetry={refresh} />
@@ -122,7 +124,7 @@ export function Home() {
               </Link>
             </div>
             <div className="mt-10 flex flex-wrap gap-6 text-sm text-slate-300">
-              <div className="flex items-center gap-2"><Truck className="h-5 w-5 text-brand-400" /> {t('home.heroShip')}</div>
+              <div className="flex items-center gap-2"><Download className="h-5 w-5 text-brand-400" /> {t('home.heroShip')}</div>
               <div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-brand-400" /> {t('home.heroWarranty')}</div>
               <div className="flex items-center gap-2"><Star className="h-5 w-5 text-brand-400" /> {t('home.heroRating')}</div>
             </div>
@@ -131,7 +133,8 @@ export function Home() {
             <div className="relative mx-auto aspect-square max-w-md rounded-3xl bg-gradient-to-br from-brand-700 to-brand-950 p-2 shadow-2xl">
               <div className="flex h-full w-full items-center justify-center rounded-2xl bg-brand-800/40">
                 <svg viewBox="0 0 24 24" className="h-40 w-40 text-brand-200" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                  <path d="M7 10h.01M12 8h.01M17 10h.01" opacity="0.6" />
                 </svg>
               </div>
             </div>
@@ -150,7 +153,7 @@ export function Home() {
             {t('home.seeAll')} <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-8">
           {categories.map((c) => (
             <Link
               key={c.id}
@@ -158,9 +161,7 @@ export function Home() {
               className="group rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm transition-all hover:-translate-y-1 hover:border-brand-300 hover:shadow-lg"
             >
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 transition-colors group-hover:bg-brand-600 group-hover:text-white">
-                <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" />
-                </svg>
+                <FileArchive className="h-7 w-7" />
               </div>
               <p className="font-semibold text-slate-800">{c.name}</p>
               <p className="mt-0.5 text-xs text-slate-500">{c.tagline}</p>
@@ -187,25 +188,67 @@ export function Home() {
         </div>
       </section>
 
-      {/* OFERTAS */}
-      <section className="bg-slate-100/70 py-14" aria-label={t('home.onSale')}>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="mb-8 flex items-end justify-between">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-red-500">{t('home.discounts')}</p>
-              <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{t('home.onSale')}</h2>
+      {/* GRATIS */}
+      {freeProducts.length > 0 && (
+        <section className="bg-slate-100/70 py-14" aria-label="Productos gratuitos">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6">
+            <div className="mb-8 flex items-end justify-between">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-wide text-green-600">Sin coste</p>
+                <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Productos gratuitos</h2>
+              </div>
+              <Link to="/productos" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-800">
+                {t('home.seeAll')} <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
-            <Link to="/ofertas" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-800">
-              {t('home.seeOffers')} <ArrowRight className="h-4 w-4" />
-            </Link>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {freeProducts.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {onSale.map((p) => (
-              <ProductCard key={p.id} product={p} />
-            ))}
+        </section>
+      )}
+
+      {/* OFERTAS */}
+      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6" aria-label={t('home.onSale')}>
+        <div className="mb-8 flex items-end justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-red-500">{t('home.discounts')}</p>
+            <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{t('home.onSale')}</h2>
           </div>
+          <Link to="/ofertas" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-800">
+            {t('home.seeOffers')} <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {onSale.map((p) => (
+            <ProductCard key={p.id} product={p} />
+          ))}
         </div>
       </section>
+
+      {/* PREMIUM */}
+      {premiumProducts.length > 0 && (
+        <section className="bg-slate-100/70 py-14" aria-label="Productos premium">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6">
+            <div className="mb-8 flex items-end justify-between">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-wide text-amber-600">Gama alta</p>
+                <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Productos premium</h2>
+              </div>
+              <Link to="/productos" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-800">
+                {t('home.seeAll')} <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {premiumProducts.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* VENTAJAS */}
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6" aria-label={t('home.advShip')}>

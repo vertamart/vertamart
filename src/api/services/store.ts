@@ -1,4 +1,4 @@
-import { apiFetch } from '../client'
+import { apiFetch, API_BASE_URL, ApiRequestError } from '../client'
 import type { Product } from '../../data/products'
 import { getToken } from './auth'
 
@@ -142,6 +142,10 @@ export interface ProductInput {
   badge?: string
   warranty?: string
   shipDays?: number
+  fileType?: string
+  fileSize?: string
+  compatibility?: string
+  license?: string
 }
 
 export interface OrderInput {
@@ -189,6 +193,28 @@ export interface Order {
   refundReason?: string | null
   pointsEarned?: number
   createdAt: string
+}
+
+/** Producto digital comprado por el usuario (biblioteca / Mis descargas). */
+export interface LibraryItem {
+  id: string
+  name: string
+  slug: string
+  brand: string
+  category: string
+  price: number
+  image: string
+  fileType: string
+  fileSize: string
+  compatibility: string
+  license: string
+  downloads: number
+  includes: string[]
+  requirements: string[]
+  updates: string
+  support: string
+  orderId: number
+  purchasedAt: string
 }
 
 export interface PayoutTransaction {
@@ -276,6 +302,19 @@ export const storeService = {
       headers: authHeaders(),
       body: input,
     })
+  },
+
+  /* ------------------- Biblioteca digital (Mis descargas) ------------------- */
+  myLibrary() {
+    return apiFetch<{ items: LibraryItem[] }>('/me/library', { headers: authHeaders() })
+  },
+  /** Descarga un producto comprado (requiere sesión): devuelve el blob del archivo. */
+  async downloadProduct(id: string) {
+    const res = await fetch(`${API_BASE_URL}/me/library/${encodeURIComponent(id)}/download`, {
+      headers: authHeaders(),
+    })
+    if (!res.ok) throw new ApiRequestError({ status: res.status, message: 'No tienes acceso a este archivo' })
+    return res.blob()
   },
 
   /* -------------------- Perfiles, seguir y chat -------------------- */

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Minus, Plus, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
+import { ArrowRight, Download, Minus, Plus, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
 import { useStore } from '../context/StoreContext'
 import { useCatalog } from '../context/CatalogContext'
 import { catalogRepository } from '../api/repository'
@@ -11,9 +11,6 @@ import { Button } from '../components/ui/Button'
 import { formatPrice } from '../lib/currency'
 import { useRegion } from '../context/RegionContext'
 import { usePersistentState } from '../hooks/usePersistentState'
-
-const FREE_SHIPPING_THRESHOLD = 49990
-const SHIPPING_COST = 4990
 
 export function Cart() {
   const { cart, updateQty, removeFromCart, clearCart, cartSubtotal, notify } = useStore()
@@ -31,8 +28,7 @@ export function Cart() {
   })
 
   const discount = coupon ? Math.round(cartSubtotal * (coupon.percent / 100)) : 0
-  const shipping = cartSubtotal === 0 || cartSubtotal - discount >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST
-  const total = Math.max(0, cartSubtotal - discount + shipping)
+  const total = Math.max(0, cartSubtotal - discount)
 
   const applyCoupon = async (e: FormEvent) => {
     e.preventDefault()
@@ -72,7 +68,7 @@ export function Cart() {
           <ShoppingBag className="h-10 w-10 text-brand-600" />
         </div>
         <h1 className="mt-6 text-2xl font-extrabold text-slate-900">Tu carrito está vacío</h1>
-        <p className="mt-2 text-slate-500">Explora nuestro catálogo y encuentra algo increíble.</p>
+        <p className="mt-2 text-slate-500">Explora nuestro catálogo de productos digitales y encuentra algo increíble.</p>
         <Link to="/productos" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-7 py-3.5 font-bold text-white transition-colors hover:bg-brand-700">
           Ir a comprar <ArrowRight className="h-5 w-5" />
         </Link>
@@ -83,7 +79,7 @@ export function Cart() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Tu carrito</h1>
-      <p className="mt-1 text-slate-500">{items.length} producto{items.length !== 1 && 's'}</p>
+      <p className="mt-1 text-slate-500">{items.length} producto{items.length !== 1 && 's'} digital{items.length !== 1 && 'es'}</p>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
         {/* Lista de items */}
@@ -100,6 +96,9 @@ export function Cart() {
                       {product.name}
                     </Link>
                     <p className="text-sm text-slate-400">{product.brand}</p>
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-brand-700">
+                      <Download className="h-3 w-3" /> {product.fileType} · {product.fileSize}
+                    </p>
                   </div>
                   <button onClick={() => removeFromCart(product.id)} aria-label={`Eliminar ${product.name}`} className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500">
                     <Trash2 className="h-4 w-4" />
@@ -111,7 +110,7 @@ export function Cart() {
                       <Minus className="h-3.5 w-3.5" />
                     </button>
                     <span className="w-8 text-center text-sm font-bold">{qty}</span>
-                    <button onClick={() => updateQty(product.id, Math.min(product.stock, qty + 1))} aria-label="Aumentar" disabled={qty >= product.stock} className="p-2 text-slate-600 hover:text-brand-700 disabled:opacity-40">
+                    <button onClick={() => updateQty(product.id, qty + 1)} aria-label="Aumentar" className="p-2 text-slate-600 hover:text-brand-700">
                       <Plus className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -160,18 +159,9 @@ export function Cart() {
           )}
 
           <dl className="mt-6 space-y-3 border-t border-slate-100 pt-5 text-sm">
-            <div className="flex justify-between"><dt className="text-slate-500">Subtotal</dt><dd className="font-semibold">{formatPrice(cartSubtotal, region)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Productos</dt><dd className="font-semibold">{formatPrice(cartSubtotal, region)}</dd></div>
             {discount > 0 && (
               <div className="flex justify-between text-brand-700"><dt>Descuento</dt><dd className="font-semibold">-{formatPrice(discount, region)}</dd></div>
-            )}
-            <div className="flex justify-between">
-              <dt className="text-slate-500">Envío</dt>
-              <dd className="font-semibold">{shipping === 0 ? <span className="text-brand-600">Gratis</span> : formatPrice(shipping, region)}</dd>
-            </div>
-            {shipping > 0 && (
-              <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-700">
-                Te faltan {formatPrice(FREE_SHIPPING_THRESHOLD - (cartSubtotal - discount), region)} para envío gratis
-              </p>
             )}
             <div className="flex justify-between border-t border-slate-100 pt-3 text-lg">
               <dt className="font-bold">Total</dt>
@@ -179,7 +169,12 @@ export function Cart() {
             </div>
           </dl>
 
-          <Button size="lg" className="mt-6 w-full" onClick={() => navigate('/checkout')}>
+          <div className="mt-4 flex items-start gap-2 rounded-xl bg-green-50 px-3 py-2.5 text-xs text-green-700">
+            <Download className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>Todos los productos son <strong>digitales</strong>: recibirás tus archivos y licencias por descarga inmediata tras el pago. Sin envíos.</p>
+          </div>
+
+          <Button size="lg" className="mt-5 w-full" onClick={() => navigate('/checkout')}>
             Proceder al pago <ArrowRight className="h-5 w-5" />
           </Button>
           <p className="mt-3 text-center text-xs text-slate-400">Compra protegida · Demo sin pagos reales</p>

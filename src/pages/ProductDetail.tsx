@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Check, Copy, Heart, MessageSquare, Minus, Plus, RefreshCcw, Send, ShieldCheck, ShoppingCart, Star, Trash2, Truck, Zap } from 'lucide-react'
+import { Check, Copy, Download, FileArchive, Heart, MessageSquare, Minus, Plus, RefreshCcw, Send, ShieldCheck, ShoppingCart, Star, Trash2, Zap } from 'lucide-react'
 import { useCatalog } from '../context/CatalogContext'
 import { CatalogError } from '../components/ui/CatalogState'
 import { useStore } from '../context/StoreContext'
@@ -128,13 +128,18 @@ export function ProductDetail() {
   }
 
   const fav = isFavorite(product.id)
-  const outOfStock = product.stock <= 0
 
   const buyNow = () => {
     addToCart(product.id, qty)
     notify('Redirigiendo al carrito...', 'info')
     window.location.href = '/carrito'
   }
+
+  const digitalFacts = [
+    { icon: FileArchive, label: 'Formato', value: product.fileType },
+    { icon: Download, label: 'Tamaño', value: product.fileSize },
+    { icon: Check, label: 'Compatibilidad', value: product.compatibility },
+  ]
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
@@ -148,13 +153,14 @@ export function ProductDetail() {
       </nav>
 
       <div className="grid gap-10 lg:grid-cols-2">
-        {/* Galería */}
+        {/* Galería / preview */}
         <div>
           <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-50">
             <ProductImage src={product.images[activeImg] ?? product.image} fallback={product.category} name={product.name} eager />
             <div className="absolute left-4 top-4 flex gap-2">
               <DiscountBadge price={product.price} oldPrice={product.oldPrice} className="px-3 py-1 text-sm" />
               {product.badge === 'nuevo' && <span className="rounded-full bg-slate-900 px-3 py-1 text-sm font-bold text-white">Nuevo</span>}
+              <span className="rounded-full bg-brand-600 px-3 py-1 text-sm font-bold text-white">Digital</span>
             </div>
           </div>
           {product.images.length > 1 && (
@@ -175,11 +181,14 @@ export function ProductDetail() {
 
         {/* Info */}
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-semibold uppercase tracking-wide text-brand-600">{product.brand}</span>
-            {product.stock > 0 && product.stock <= 10 && (
-              <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-xs font-bold text-orange-600">¡Últimas {product.stock} unidades!</span>
-            )}
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-bold text-green-700">
+              <Download className="h-3 w-3" /> Descarga instantánea
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
+              <FileArchive className="h-3 w-3" /> {product.fileType} · {product.fileSize}
+            </span>
           </div>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">{product.name}</h1>
           {product.productCode && (
@@ -243,21 +252,6 @@ export function ProductDetail() {
             </div>
           )}
 
-          {/* Colores */}
-          <div className="mt-6">
-            <p className="text-sm font-semibold text-slate-700">Color:</p>
-            <div className="mt-2 flex gap-2">
-              {product.colors.map((c, i) => (
-                <button
-                  key={i}
-                  aria-label={`Color ${i + 1}`}
-                  className="h-8 w-8 rounded-full border-2 border-slate-200 transition-transform hover:scale-110"
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-          </div>
-
           {/* Cantidad + acciones */}
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <div className="flex items-center rounded-xl border border-slate-200">
@@ -265,12 +259,12 @@ export function ProductDetail() {
                 <Minus className="h-4 w-4" />
               </button>
               <span className="w-10 text-center font-bold" aria-live="polite">{qty}</span>
-              <button onClick={() => setQty((q) => Math.min(product.stock, q + 1))} aria-label="Aumentar cantidad" className="p-3 text-slate-600 hover:text-brand-700 disabled:opacity-40" disabled={qty >= product.stock}>
+              <button onClick={() => setQty((q) => q + 1)} aria-label="Aumentar cantidad" className="p-3 text-slate-600 hover:text-brand-700">
                 <Plus className="h-4 w-4" />
               </button>
             </div>
 
-            <Button size="lg" onClick={() => addToCart(product.id, qty)} disabled={outOfStock} className="flex-1 min-w-[220px]">
+            <Button size="lg" onClick={() => addToCart(product.id, qty)} className="flex-1 min-w-[220px]">
               <ShoppingCart className="h-5 w-5" /> Añadir al carrito
             </Button>
 
@@ -279,23 +273,34 @@ export function ProductDetail() {
             </Button>
           </div>
 
-          <Button variant="secondary" size="lg" onClick={buyNow} disabled={outOfStock} className="mt-3 w-full">
-            <Zap className="h-5 w-5" /> Comprar ahora
+          <Button variant="secondary" size="lg" onClick={buyNow} className="mt-3 w-full">
+            <Zap className="h-5 w-5" /> Comprar ahora — descarga inmediata
           </Button>
 
-          {/* Info de envío */}
-          <div className="mt-8 space-y-3 rounded-2xl border border-slate-200 bg-white p-5 text-sm">
+          {/* Datos del archivo digital */}
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            {digitalFacts.map((f) => (
+              <div key={f.label} className="rounded-2xl border border-slate-200 bg-white p-4 text-center">
+                <f.icon className="mx-auto h-5 w-5 text-brand-600" />
+                <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{f.label}</p>
+                <p className="mt-0.5 text-sm font-bold text-slate-800">{f.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Garantías del producto digital */}
+          <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-5 text-sm">
             <div className="flex gap-3">
-              <Truck className="h-5 w-5 shrink-0 text-brand-600" />
-              <p><strong>Envío en {product.shipDays} día{product.shipDays > 1 && 's'} hábiles.</strong> Gratis en compras sobre $49.990.</p>
+              <Download className="h-5 w-5 shrink-0 text-brand-600" />
+              <p><strong>Acceso inmediato.</strong> Recibirás tu archivo en cuanto se confirme el pago.</p>
             </div>
             <div className="flex gap-3">
               <RefreshCcw className="h-5 w-5 shrink-0 text-brand-600" />
-              <p><strong>Devoluciones gratis</strong> dentro de 30 días.</p>
+              <p><strong>{product.updates}</strong> — siempre tendrás la última versión.</p>
             </div>
             <div className="flex gap-3">
               <ShieldCheck className="h-5 w-5 shrink-0 text-brand-600" />
-              <p><strong>Garantía</strong>{product.warranty ? ` ${product.warranty}` : ' de 12 meses'}{product.owner ? ' ofrecida por el vendedor' : ' oficial del fabricante'}.</p>
+              <p><strong>{product.license}.</strong> {product.support} incluido.</p>
             </div>
           </div>
 
@@ -310,6 +315,46 @@ export function ProductDetail() {
                 </li>
               ))}
             </ul>
+          </div>
+
+          {/* Qué incluye */}
+          {product.includes && product.includes.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-lg font-bold text-slate-900">Qué incluye la descarga</h2>
+              <ul className="mt-3 space-y-2">
+                {product.includes.map((inc, i) => (
+                  <li key={i} className="flex items-start gap-2 text-slate-600">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+                    {inc}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Requisitos */}
+          {product.requirements && product.requirements.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-lg font-bold text-slate-900">Requisitos</h2>
+              <ul className="mt-3 space-y-2">
+                {product.requirements.map((req, i) => (
+                  <li key={i} className="flex items-start gap-2 text-slate-600">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+                    {req}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Licencia */}
+          <div className="mt-8 rounded-2xl border border-brand-100 bg-brand-50/60 p-5">
+            <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+              <ShieldCheck className="h-5 w-5 text-brand-600" /> Licencia
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              <strong>{product.license}.</strong> {product.downloads.toLocaleString('es')} descargas realizadas hasta ahora.
+            </p>
           </div>
         </div>
       </div>

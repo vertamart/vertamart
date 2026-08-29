@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Heart, ShoppingCart, Truck, User, Copy } from 'lucide-react'
+import { Copy, Download, FileArchive, Heart, ShoppingCart, User, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { useI18n } from '../../context/I18nContext'
 import type { Product } from '../../data/products'
@@ -12,7 +12,7 @@ import { Button } from './Button'
 import { cn } from '../../lib/cn'
 
 export function ProductCard({ product, className }: { product: Product; className?: string }) {
-  const { toggleFavorite, isFavorite, addToCart } = useStore()
+  const { toggleFavorite, isFavorite, addToCart, notify } = useStore()
   const { t } = useI18n()
   const [copied, setCopied] = useState(false)
   const fav = isFavorite(product.id)
@@ -28,6 +28,11 @@ export function ProductCard({ product, className }: { product: Product; classNam
       /* portapapeles no disponible */
     }
   }
+  const buyNow = () => {
+    addToCart(product.id, 1)
+    notify('Redirigiendo al carrito...', 'info')
+    window.location.href = '/carrito'
+  }
 
   return (
     <article className={cn('group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-200/70', className)}>
@@ -36,6 +41,9 @@ export function ProductCard({ product, className }: { product: Product; classNam
         <div className="absolute left-3 top-3 flex flex-col gap-2">
           {badgeLabel && <span className="rounded-full bg-brand-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm">{badgeLabel}</span>}
           <DiscountBadge price={product.price} oldPrice={product.oldPrice} />
+          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-slate-900/90 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm">
+            <Download className="h-3 w-3" /> Digital
+          </span>
         </div>
       </Link>
 
@@ -48,7 +56,12 @@ export function ProductCard({ product, className }: { product: Product; classNam
       </button>
 
       <div className="flex flex-1 flex-col gap-1 p-4">
-        <span className="text-xs font-medium uppercase tracking-wide text-slate-400">{product.brand}</span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">{product.brand}</span>
+          <span className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-[11px] font-bold text-brand-700">
+            <FileArchive className="h-3 w-3" /> {product.fileType} · {product.fileSize}
+          </span>
+        </div>
         <Link to={`/producto/${product.slug}`} className="line-clamp-2 font-semibold text-slate-800 transition-colors hover:text-brand-700">
           {product.name}
         </Link>
@@ -76,20 +89,15 @@ export function ProductCard({ product, className }: { product: Product; classNam
         {typeof product.reviews === 'number' && product.reviews > 0 && <Rating value={product.rating} count={product.reviews} size="sm" />}
         <div className="mt-auto flex items-end justify-between gap-2 pt-2">
           <Price price={product.price} oldPrice={product.oldPrice} />
-          {product.stock > 0 ? (
-            <Button size="sm" onClick={() => addToCart(product.id)} className="shrink-0" aria-label={`Añadir ${product.name} al carrito`}>
-              <ShoppingCart className="h-4 w-4" />
-              <span className="hidden sm:inline">Añadir</span>
+          <div className="flex shrink-0 gap-1.5">
+            <Button size="sm" onClick={buyNow} aria-label={`Comprar ${product.name} ahora`} title="Comprar ahora">
+              <Zap className="h-4 w-4" />
             </Button>
-          ) : (
-            <span className="shrink-0 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-400">Agotado</span>
-          )}
+            <Button size="sm" variant="outline" onClick={() => addToCart(product.id)} aria-label={`Añadir ${product.name} al carrito`}>
+              <ShoppingCart className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-        {product.stock > 0 && product.stock <= 5 && (
-          <span className="mt-1 flex items-center gap-1 text-xs font-medium text-orange-600">
-            <Truck className="h-3.5 w-3.5" /> Solo {product.stock} en stock
-          </span>
-        )}
       </div>
     </article>
   )
