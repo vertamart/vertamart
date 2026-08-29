@@ -5,6 +5,16 @@ import { useCatalog } from './CatalogContext'
 export interface CartItem {
   id: string
   qty: number
+  /** Si es un bundle (pack de productos), almacena la referencia y el precio del pack. */
+  bundle?: {
+    slug: string
+    name: string
+    image: string
+    /** Precio del bundle ya calculado (CLP). */
+    price: number
+    /** Slugs de los productos incluidos (para expandir en el pedido). */
+    productSlugs: string[]
+  }
 }
 
 export interface Toast {
@@ -18,6 +28,7 @@ interface StoreContextValue {
   favorites: string[]
   toast: Toast | null
   addToCart: (id: string, qty?: number) => void
+  addBundleToCart: (bundle: NonNullable<CartItem['bundle']>) => void
   updateQty: (id: string, qty: number) => void
   removeFromCart: (id: string) => void
   clearCart: () => void
@@ -71,6 +82,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [setCart, notify, products, cart],
   )
 
+  /** Añade un pack (bundle) al carrito como un único item con su precio de pack. */
+  const addBundleToCart = useCallback(
+    (bundle: NonNullable<CartItem['bundle']>) => {
+      setCart((prev) => {
+        const existing = prev.find((i) => i.id === `bundle:${bundle.slug}`)
+        if (existing) return prev.map((i) => (i.id === existing.id ? { ...i, qty: i.qty + 1 } : i))
+        return [...prev, { id: `bundle:${bundle.slug}`, qty: 1, bundle }]
+      })
+      notify(`${bundle.name} añadido al carrito`)
+    },
+    [setCart, notify],
+  )
+
   const updateQty = useCallback(
     (id: string, qty: number) => {
       setCart((prev) => (qty <= 0 ? prev.filter((i) => i.id !== id) : prev.map((i) => (i.id === id ? { ...i, qty } : i))))
@@ -99,6 +123,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const cartSubtotal = useMemo(
     () => cart.reduce((sum, i) => {
+      if (i.bundle) return sum + i.bundle.price * i.qty
       const p = products.find((x) => x.id === i.id)
       return sum + (p ? p.price * i.qty : 0)
     }, 0),
@@ -111,6 +136,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       favorites,
       toast,
       addToCart,
+      addBundleToCart,
       updateQty,
       removeFromCart,
       clearCart,
@@ -120,7 +146,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       isFavorite,
       notify,
     }),
-    [cart, favorites, toast, addToCart, updateQty, removeFromCart, clearCart, cartSubtotal, cartCount, toggleFavorite, isFavorite, notify],
+    [cart, favorites, toast, addToCart, addBundleToCart, updateQty, removeFromCart, clearCart, cartSubtotal, cartCount, toggleFavorite, isFavorite, notify],
   )
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

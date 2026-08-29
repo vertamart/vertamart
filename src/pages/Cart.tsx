@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Download, Minus, Plus, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
+import { ArrowRight, Check, Download, Minus, Package, Plus, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
 import { useStore } from '../context/StoreContext'
 import { useCatalog } from '../context/CatalogContext'
 import { catalogRepository } from '../api/repository'
@@ -26,6 +26,8 @@ export function Cart() {
     const product = products.find((p) => p.id === i.id)
     return product ? [{ ...i, product }] : []
   })
+  const bundleItems = cart.filter((i) => i.bundle)
+  const itemsCount = items.length + bundleItems.length
 
   const discount = coupon ? Math.round(cartSubtotal * (coupon.percent / 100)) : 0
   const total = Math.max(0, cartSubtotal - discount)
@@ -61,7 +63,7 @@ export function Cart() {
     return <div className="mx-auto max-w-7xl px-4 py-24 text-center text-slate-400">Cargando tu carrito…</div>
   }
 
-  if (items.length === 0) {
+  if (items.length === 0 && bundleItems.length === 0) {
     return (
       <div className="mx-auto flex max-w-7xl flex-col items-center px-4 py-24 text-center">
         <div className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-50">
@@ -79,11 +81,65 @@ export function Cart() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Tu carrito</h1>
-      <p className="mt-1 text-slate-500">{items.length} producto{items.length !== 1 && 's'} digital{items.length !== 1 && 'es'}</p>
+      <p className="mt-1 text-slate-500">{itemsCount} producto{itemsCount !== 1 && 's'} digital{itemsCount !== 1 && 'es'}</p>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
         {/* Lista de items */}
         <div className="space-y-4">
+          {/* Bundles (packs) */}
+          {bundleItems.map((b) => {
+            const bundle = b.bundle!
+            const included = products.filter((p) => bundle.productSlugs.includes(p.slug))
+            return (
+              <div key={b.id} className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+                <div className="flex gap-4">
+                  <Link to={`/bundle/${bundle.slug === 'custom' ? 'pack-para-creadores' : bundle.slug}`} className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-50">
+                    <ProductImage src={bundle.image} fallback="monitor" name={bundle.name} />
+                  </Link>
+                  <div className="flex flex-1 flex-col">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white">
+                            <Package className="h-3 w-3" /> Verta Bundle
+                          </span>
+                          <p className="font-semibold text-slate-800">{bundle.name}</p>
+                        </div>
+                        <p className="mt-0.5 text-sm text-slate-400">{included.length} productos incluidos</p>
+                      </div>
+                      <button onClick={() => removeFromCart(b.id)} aria-label={`Eliminar ${bundle.name}`} className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {included.map((p) => (
+                        <Link
+                          key={p.slug}
+                          to={`/producto/${p.slug}`}
+                          className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 hover:text-emerald-700"
+                        >
+                          <Check className="h-3 w-3 text-emerald-600" /> {p.name}
+                        </Link>
+                      ))}
+                    </div>
+                    <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-3">
+                      <div className="flex items-center rounded-xl border border-slate-200 bg-white">
+                        <button onClick={() => updateQty(b.id, b.qty - 1)} aria-label="Disminuir" className="p-2 text-slate-600 hover:text-brand-700">
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="w-8 text-center text-sm font-bold">{b.qty}</span>
+                        <button onClick={() => updateQty(b.id, b.qty + 1)} aria-label="Aumentar" className="p-2 text-slate-600 hover:text-brand-700">
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <Price price={bundle.price * b.qty} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+
           {items.map(({ product, qty }) => (
             <div key={product.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-white p-4">
               <Link to={`/producto/${product.slug}`} className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-50">

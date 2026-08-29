@@ -6,6 +6,10 @@ import { CatalogError, CatalogSkeleton } from '../components/ui/CatalogState'
 import { ProductCard } from '../components/ui/ProductCard'
 import { useStore } from '../context/StoreContext'
 import { useI18n } from '../context/I18nContext'
+import { BUNDLES, bundleProducts, bundlePriceOf, bundleRegularTotal, bundleSavingsPercent } from '../data/bundles'
+import { ProductImage } from '../components/ui/ProductImage'
+import { formatPrice } from '../lib/currency'
+import { useRegion } from '../context/RegionContext'
 import { cn } from '../lib/cn'
 
 const BANNER_KEY = 'verta.bannerDismissed'
@@ -14,6 +18,7 @@ export function Home() {
   const { notify } = useStore()
   const { t } = useI18n()
   const { products, categories, status, error, refresh } = useCatalog()
+  const { region } = useRegion()
   const [email, setEmail] = useState('')
   const [emailError, setEmailError] = useState('')
   const [subscribed, setSubscribed] = useState(false)
@@ -185,6 +190,49 @@ export function Home() {
           {featured.map((p) => (
             <ProductCard key={p.id} product={p} className="animate-fade-up" />
           ))}
+        </div>
+      </section>
+
+      {/* BUNDLES */}
+      <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6" aria-label="Verta Bundles">
+        <div className="mb-8 flex items-end justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-brand-600">Verta Bundles</p>
+            <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{t('home.bundlesTitle')}</h2>
+          </div>
+          <Link to="/bundles" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:text-brand-800">
+            {t('home.seeAll')} <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {BUNDLES.slice(0, 3).map((bundle) => {
+            const items = bundleProducts(bundle, products)
+            const regular = bundleRegularTotal(bundle, products)
+            const pct = bundleSavingsPercent(bundle, products)
+            return (
+              <Link
+                key={bundle.id}
+                to={`/bundle/${bundle.slug}`}
+                className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl"
+              >
+                <div className="relative h-40 overflow-hidden">
+                  <ProductImage src={bundle.image} fallback="monitor" name={bundle.name} />
+                  <span className="absolute left-3 top-3 rounded-full bg-brand-600 px-3 py-1 text-xs font-extrabold text-white shadow">
+                    {t('home.bundleSave')} {pct}%
+                  </span>
+                </div>
+                <div className="p-5">
+                  <h3 className="font-extrabold text-slate-900 group-hover:text-brand-700">{bundle.name}</h3>
+                  <p className="mt-0.5 text-sm text-slate-500">{bundle.tagline}</p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-lg font-extrabold text-brand-700">{formatPrice(bundlePriceOf(bundle), region)}</span>
+                    <span className="text-sm text-slate-400 line-through">{formatPrice(regular, region)}</span>
+                  </div>
+                  <p className="mt-2 text-sm font-semibold text-brand-700">{items.length} {t('home.bundleProducts')} →</p>
+                </div>
+              </Link>
+            )
+          })}
         </div>
       </section>
 

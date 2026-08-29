@@ -94,10 +94,22 @@ export function Checkout() {
     return () => { active = false }
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Items normales del carrito.
   const items: { id: string; qty: number; product: Product }[] = cart.flatMap((i) => {
     const product = products.find((p) => p.id === i.id)
     return product ? [{ ...i, product }] : []
   })
+  // Bundles: se expanden en sus productos individuales para el pedido (la biblioteca registra cada uno).
+  const bundleExpanded: { product: Product; qty: number }[] = cart.flatMap((i) => {
+    if (!i.bundle) return []
+    const included = products.filter((p) => i.bundle!.productSlugs.includes(p.slug))
+    return included.map((p) => ({ product: p, qty: i.qty }))
+  })
+  const allItems = [...items, ...bundleExpanded]
+  // Suma de precios individuales (sin el descuento del bundle) para el pedido.
+  const regularSubtotal = allItems.reduce((sum, { product, qty }) => sum + product.price * qty, 0)
+  // Lo que se ahorra por los bundles (regular - precio de pack).
+  const bundleSavings = Math.max(0, regularSubtotal - cartSubtotal)
   const discount = coupon ? Math.round(cartSubtotal * (coupon.percent / 100)) : 0
   const maxRedeem = Math.max(0, Math.min(pointsAvailable, cartSubtotal - discount))
   const pointsDiscount = Math.min(redeemPoints, maxRedeem)
@@ -159,11 +171,11 @@ export function Checkout() {
     )
   }
 
-  if (status === 'loading' && items.length === 0) {
+  if (status === 'loading' && allItems.length === 0) {
     return <div className="mx-auto max-w-7xl px-4 py-24 text-center text-slate-400">Cargando tu pedido…</div>
   }
 
-  if (items.length === 0) {
+  if (allItems.length === 0) {
     return (
       <div className="mx-auto flex max-w-7xl flex-col items-center px-4 py-24 text-center">
         <ShoppingBag className="h-12 w-12 text-slate-300" />
@@ -246,9 +258,9 @@ export function Checkout() {
         // Guardar el pedido primero: devuelve el enlace privado del correo.
         void storeService
           .createOrder({
-            items: items.map(({ product, qty }) => ({ productId: product.id, name: product.name, price: product.price, qty })),
-            subtotal: cartSubtotal,
-            discount,
+            items: allItems.map(({ product, qty }) => ({ productId: product.id, name: product.name, price: product.price, qty })),
+            subtotal: regularSubtotal,
+            discount: discount + bundleSavings,
             shipping: 0,
             total,
             method,
@@ -443,18 +455,50 @@ export function Checkout() {
         <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-6 lg:sticky lg:top-24">
           <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900"><Package className="h-5 w-5 text-brand-600" /> Resumen</h2>
           <ul className="mt-4 space-y-3">
-            {items.map(({ product, qty }) => (
-              <li key={product.id} className="flex items-center gap-3">
-                <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-50">
-                  <ProductImage src={product.image} fallback={product.category} name={product.name} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-800">{product.name}</p>
-                  <p className="text-xs text-slate-400">× {qty}</p>
-                </div>
-                <span className="text-sm font-bold">{formatPrice(product.price * qty, region)}</span>
-              </li>
-            ))}
+            {cart.map((item) => {
+              if (item.bundle) {
+                const bundle = item.bundle
+                const included = products.filter((p) => bundle.productSlugs.includes(p.slug))
+                return (
+                  <li key={item.id} className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-50">
+                        <ProductImage src={bundle.image} fallback="monitor" name={bundle.name} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-1.5 truncate text-sm font-bold text-slate-800">
+                          <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white">Bundle</span>
+                          {bundle.name}
+                        </p>
+                        <p className="text-xs text-slate-500">{included.length} productos · × {item.qty}</p>
+                      </div>
+                      <span className="text-sm font-bold">{formatPrice(bundle.price * item.qty, region)}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {included.map((p) => (
+                        <span key={p.slug} className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-600" /> {p.name}
+                        </span>
+                      ))}
+                    </div>
+                  </li>
+                )
+              }
+              const product = products.find((p) => p.id === item.id)
+              if (!product) return null
+              return (
+                <li key={item.id} className="flex items-center gap-3">
+                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-50">
+                    <ProductImage src={product.image} fallback={product.category} name={product.name} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-800">{product.name}</p>
+                    <p className="text-xs text-slate-400">× {item.qty}</p>
+                  </div>
+                  <span className="text-sm font-bold">{formatPrice(product.price * item.qty, region)}</span>
+                </li>
+              )
+            })}
           </ul>
 
           <dl className="mt-5 space-y-2 border-t border-slate-100 pt-4 text-sm">

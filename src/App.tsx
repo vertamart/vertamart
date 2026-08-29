@@ -11,6 +11,8 @@ const Checkout = lazy(() => import('./pages/Checkout').then((m) => ({ default: m
 const Favorites = lazy(() => import('./pages/Favorites').then((m) => ({ default: m.Favorites })))
 const Categories = lazy(() => import('./pages/Categories').then((m) => ({ default: m.Categories })))
 const Sale = lazy(() => import('./pages/Sale').then((m) => ({ default: m.Sale })))
+const Bundles = lazy(() => import('./pages/Bundles').then((m) => ({ default: m.Bundles })))
+const BundleDetail = lazy(() => import('./pages/BundleDetail').then((m) => ({ default: m.BundleDetail })))
 const About = lazy(() => import('./pages/About').then((m) => ({ default: m.About })))
 const Contact = lazy(() => import('./pages/Contact').then((m) => ({ default: m.Contact })))
 const Install = lazy(() => import('./pages/Install').then((m) => ({ default: m.Install })))
@@ -54,6 +56,8 @@ export default function App() {
           <Route path="/favoritos" element={<Favorites />} />
           <Route path="/categorias" element={<Categories />} />
           <Route path="/ofertas" element={<Sale />} />
+          <Route path="/bundles" element={<Bundles />} />
+          <Route path="/bundle/:slug" element={<BundleDetail />} />
           <Route path="/nosotros" element={<About />} />
           <Route path="/contacto" element={<Contact />} />
           <Route path="/instalar" element={<Install />} />

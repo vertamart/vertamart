@@ -11,6 +11,7 @@ import { cn } from '../../lib/cn'
 const linkKeys = [
   { to: '/', key: 'nav.home' },
   { to: '/productos', key: 'nav.products' },
+  { to: '/bundles', key: 'nav.bundles' },
   { to: '/categorias', key: 'nav.categories' },
   { to: '/ofertas', key: 'nav.offers' },
   { to: '/feed', key: 'nav.feed' },
