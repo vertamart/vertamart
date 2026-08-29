@@ -40,16 +40,39 @@ function raster(size, foregroundOnly = false) {
       }
       const dL = segDist(x, y, apex.x, apex.y, lTop.x, lTop.y)
       const dR = segDist(x, y, apex.x, apex.y, rTop.x, rTop.y)
-      if (Math.min(dL, dR) <= stroke) { buf[i] = 255; buf[i + 1] = 255; buf[i + 2] = 255 }
+      if (Math.min(dL, dR) <= stroke) { buf[i] = 255; buf[i + 1] = 255; buf[i + 2] = 255; buf[i + 3] = 255 }
     }
   }
   return buf
 }
 
-/** Versión para el foreground adaptativo de Android: marca blanca centrada en transparencia. */
+/** Versión para el foreground adaptativo de Android: marca blanca centrada en transparencia.
+ * El adaptive-icon de Android solo muestra el 66% central del canvas (área segura),
+ * así que la marca se dibuja escalada y centrada dentro de esa zona. */
 function rasterAdaptiveForeground(size) {
-  const buf = raster(size, true)
-  // Sin más capas: reutilizamos la marca del raster base (centrada).
+  const buf = Buffer.alloc(size * size * 4)
+  // Escala de la marca dentro del área segura (66% central del canvas).
+  const c = size * 0.5
+  const s = size * 0.62 // marca ocupa ~62% del canvas
+  const apex = { x: c, y: c + s * 0.27 }
+  const lTop = { x: c - s * 0.24, y: c - s * 0.28 }
+  const rTop = { x: c + s * 0.24, y: c - s * 0.28 }
+  const stroke = size * 0.055
+  const segDist = (px, py, ax, ay, bx, by) => {
+    const dx = bx - ax, dy = by - ay
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+  }
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dL = segDist(x, y, apex.x, apex.y, lTop.x, lTop.y)
+      const dR = segDist(x, y, apex.x, apex.y, rTop.x, rTop.y)
+      if (Math.min(dL, dR) <= stroke) {
+        const i = (y * size + x) * 4
+        buf[i] = 255; buf[i + 1] = 255; buf[i + 2] = 255; buf[i + 3] = 255
+      }
+    }
+  }
   return buf
 }
 
