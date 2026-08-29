@@ -438,7 +438,7 @@ const es = {
   'footer.legal': 'Demo educativa — sin compras reales.',
   'footer.terms': 'Términos',
   'footer.privacy': 'Privacidad',
-  'app.version': 'Versión v1.4.0',
+  'app.version': 'Versión v1.4.1',
 
   'cookie.title': 'Usamos cookies',
   'cookie.body': 'Usamos cookies y almacenamiento local para recordar tu idioma, carrito, favoritos y tema, y para mantener tu sesión iniciada. Esto hace que la tienda funcione mejor para ti.',
@@ -905,7 +905,7 @@ const dict: Record<Lang, Record<TranslationKey, string>> = {
     'footer.legal': 'Educational demo — no real purchases.',
     'footer.terms': 'Terms',
     'footer.privacy': 'Privacy',
-    'app.version': 'Version v1.4.0',
+    'app.version': 'Version v1.4.1',
 
     'cookie.title': 'We use cookies',
     'cookie.body': 'We use cookies and local storage to remember your language, cart, favorites and theme, and to keep you signed in. This helps the store work better for you.',

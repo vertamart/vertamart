@@ -1014,7 +1014,7 @@ function templateHtml(p) {
 </style>
 </head>
 <body>
-<header><div class="container nav"><div class="logo">${escHtml(brand)}<span>.</span></div><nav><a href="#features">Características</a><a href="#cta">Contacto</a></nav></div></header>
+<header><div class="container nav"><div class="logo">${escHtml(p.brand ?? 'Vertamart')}<span>.</span></div><nav><a href="#features">Características</a><a href="#cta">Contacto</a></nav></div></header>
 <section class="hero">
   <div class="container">
     <span class="tag">Plantilla digital · Versión ${escHtml(p.version ?? '1.0.0')}</span>
@@ -1036,7 +1036,7 @@ function templateHtml(p) {
     <a class="btn" href="#">Comenzar ahora</a>
   </div>
 </section>
-<footer><div class="container">© ${new Date().getFullYear()} ${escHtml(brand)} · Plantilla generada con licencia ${escHtml(p.license ?? 'Uso personal y comercial')}</div></footer>
+<footer><div class="container">© ${new Date().getFullYear()} ${escHtml(p.brand ?? 'Vertamart')} · Plantilla generada con licencia ${escHtml(p.license ?? 'Uso personal y comercial')}</div></footer>
 </body>
 </html>`
 }
