@@ -18,6 +18,25 @@ const LOW_STOCK_THRESHOLD = 3
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ORDER_STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'cancelled']
 const PRODUCT_STATUSES = ['active', 'hidden']
+const MESSAGE_MAX_LENGTH = 2000
+
+/** Videos de ejemplo para el feed, elegidos según el título/descripción. */
+const FEED_VIDEOS = [
+  { keyword: /setup|escritorio|oficina|work|trabajo|desk|laptop|computador|notebook/i, url: 'https://videos.pexels.com/video-files/3195394/3195394-hd_1920_1080_25fps.mp4' },
+  { keyword: /teclado|keyboard|typing|teclear|write|mecanico/i, url: 'https://videos.pexels.com/video-files/853800/853800-hd_1920_1080_25fps.mp4' },
+  { keyword: /gaming|gamer|jugar|juego|esports|setup gaming/i, url: 'https://videos.pexels.com/video-files/3205627/3205627-hd_1920_1080_25fps.mp4' },
+  { keyword: /audio|sonido|musica|m\u00fasica|auricular|bocina|parlante|radio|music/i, url: 'https://videos.pexels.com/video-files/2242403/2242403-hd_1920_1080_25fps.mp4' },
+  { keyword: /monitor|pantalla|display|video|pel\u00edcula|stream|streaming/i, url: 'https://videos.pexels.com/video-files/7955311/7955311-hd_1920_1080_30fps.mp4' },
+  { keyword: /wearable|reloj|smartwatch|pulsera|fitness|deporte|entrenar|health|salud/i, url: 'https://videos.pexels.com/video-files/4761732/4761732-hd_1920_1080_25fps.mp4' },
+  { keyword: /mouse|rat\u00f3n|click/i, url: 'https://videos.pexels.com/video-files/3252021/3252021-hd_1920_1080_25fps.mp4' },
+  { keyword: /carga|cargador|cable|poder|power|energ\u00eda/i, url: 'https://videos.pexels.com/video-files/8112441/8112441-hd_1920_1080_30fps.mp4' },
+]
+const FALLBACK_VIDEO = 'https://videos.pexels.com/video-files/3195394/3195394-hd_1920_1080_25fps.mp4'
+function pickVideo(title, description) {
+  const haystack = `${title || ''} ${description || ''}`
+  for (const item of FEED_VIDEOS) if (item.keyword.test(haystack)) return item.url
+  return FALLBACK_VIDEO
+}
 
 /* ------------------------------ db helper ------------------------------ */
 
@@ -241,9 +260,9 @@ async function sendEmail(env, to, subject, html) {
     try {
       const mailer = await WorkerMailer.connect({
         host: 'smtp.gmail.com',
-        port: 587,
-        secure: false,
-        startTls: true,
+        port: 465,
+        secure: true,
+        startTls: false,
         credentials: { username: env.GMAIL_USER, password: env.GMAIL_APP_PASSWORD },
         authType: 'plain',
         responseTimeoutMs: 10000,
@@ -427,6 +446,31 @@ async function publicProfile(row, viewerId) {
 }
 
 const paginate = (items) => ({ items, total: items.length, page: 1, pageSize: items.length, totalPages: 1 })
+
+/** Convierte una fila de feed_posts al formato de la API (con likes y comentarios reales). */
+async function feedPostToApi(row, viewerId) {
+  const likesCount = await db.get('SELECT COUNT(*) AS count FROM feed_likes WHERE post_id = ?', row.id)
+  const liked = viewerId
+    ? !!(await db.get('SELECT 1 FROM feed_likes WHERE post_id = ? AND user_id = ?', row.id, viewerId))
+    : false
+  const commentsCount = await db.get('SELECT COUNT(*) AS count FROM feed_comments WHERE post_id = ?', row.id)
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name,
+    userVerified: (await verificationFor(row.user_id)).verified,
+    productId: row.product_id,
+    productCode: row.product_code ?? null,
+    productName: row.product_name ?? null,
+    title: row.title,
+    description: row.description,
+    videoUrl: row.video_url,
+    likesCount: likesCount?.count ?? 0,
+    liked,
+    commentsCount: commentsCount?.count ?? 0,
+    createdAt: row.created_at,
+  }
+}
 
 /* ------------------------- seed admin (una vez) ------------------------- */
 
@@ -706,18 +750,12 @@ const handlers = {
 
   async listFeed(user) {
     const rows = await db.all(`
-      SELECT f.*, u.name AS user_name, p.name AS product_name, p.product_code,
-        (SELECT COUNT(*) FROM feed_comments c WHERE c.post_id = f.id) AS comments_count
+      SELECT f.*, u.name AS user_name, p.name AS product_name, p.product_code
       FROM feed_posts f JOIN users u ON u.id = f.user_id
       LEFT JOIN products p ON CAST(p.id AS TEXT) = f.product_id
       ORDER BY f.id DESC
     `)
-    const items = await Promise.all(rows.map(async (row) => ({
-      id: row.id, userId: row.user_id, userName: row.user_name, userVerified: (await verificationFor(row.user_id)).verified,
-      productId: row.product_id, productCode: row.product_code ?? null, productName: row.product_name ?? null,
-      title: row.title, description: row.description, videoUrl: row.video_url,
-      likesCount: row.likes_count ?? 0, liked: false, commentsCount: row.comments_count ?? 0, createdAt: row.created_at,
-    })))
+    const items = await Promise.all(rows.map((row) => feedPostToApi(row, user?.id)))
     return json(paginate(items))
   },
 
@@ -943,6 +981,248 @@ const handlers = {
       isRead: row.is_read,
       createdAt: row.created_at,
     }, 201)
+  },
+
+  async emailAvailability(req) {
+    const email = String(new URL(req.url).searchParams.get('email') ?? '').trim().toLowerCase()
+    if (!EMAIL_RE.test(email)) return json({ valid: false, available: false })
+    const exists = await db.get('SELECT id FROM users WHERE email = ?', email)
+    return json({ valid: true, available: !exists })
+  },
+
+  async editMessage(user, id, body) {
+    const row = await db.get('SELECT * FROM messages WHERE id = ? AND sender_id = ? AND deleted_at IS NULL', id, user.id)
+    if (!row) return fail(404, 'Mensaje no encontrado', 'NOT_FOUND')
+    const content = String(body?.content ?? '').trim()
+    if (!content || content.length > MESSAGE_MAX_LENGTH) return fail(400, 'Contenido no válido', 'INVALID_CONTENT')
+    await db.run("UPDATE messages SET content = ?, edited_at = datetime('now') WHERE id = ?", content, id)
+    const updated = await db.get('SELECT * FROM messages WHERE id = ?', id)
+    return json({
+      id: updated.id,
+      senderId: updated.sender_id,
+      receiverId: updated.receiver_id,
+      content: updated.content,
+      imageUrl: updated.image_url,
+      editedAt: updated.edited_at,
+      isRead: updated.is_read,
+      createdAt: updated.created_at,
+    })
+  },
+
+  async deleteMessage(user, id) {
+    const result = await db.run("UPDATE messages SET content = '', image_url = NULL, deleted_at = datetime('now') WHERE id = ? AND sender_id = ? AND deleted_at IS NULL", id, user.id)
+    if (result.changes === 0) return fail(404, 'Mensaje no encontrado', 'NOT_FOUND')
+    return new Response(null, { status: 204 })
+  },
+
+  async blockUser(user, id) {
+    if (id === user.id || !(await db.get('SELECT id FROM users WHERE id = ?', id))) return fail(400, 'Usuario no válido', 'INVALID_USER')
+    await db.run('INSERT OR IGNORE INTO blocked_users (blocker_id, blocked_id) VALUES (?, ?)', user.id, id)
+    return json({ blocked: true, userId: id })
+  },
+
+  async unblockUser(user, id) {
+    await db.run('DELETE FROM blocked_users WHERE blocker_id = ? AND blocked_id = ?', user.id, id)
+    return json({ blocked: false, userId: id })
+  },
+
+  async deleteContact(user, id) {
+    await db.run('DELETE FROM contacts WHERE owner_id = ? AND user_id = ?', user.id, id)
+    await db.run('DELETE FROM follows WHERE (follower_id = ? AND following_id = ?) OR (follower_id = ? AND following_id = ?)', user.id, id, id, user.id)
+    return new Response(null, { status: 204 })
+  },
+
+  async myFeedPosts(user) {
+    const rows = await db.all(
+      `SELECT f.*, u.name AS user_name, p.name AS product_name, p.product_code
+       FROM feed_posts f JOIN users u ON u.id = f.user_id
+       LEFT JOIN products p ON CAST(p.id AS TEXT) = f.product_id
+       WHERE f.user_id = ? ORDER BY f.id DESC`,
+      user.id,
+    )
+    const items = await Promise.all(rows.map((row) => feedPostToApi(row, user.id)))
+    return json(paginate(items))
+  },
+
+  async createFeed(user, body) {
+    if (user.role === 'support') return fail(403, 'La cuenta de soporte solo puede usar el chat', 'SUPPORT_CHAT_ONLY')
+    const title = String(body?.title ?? '').trim()
+    const description = String(body?.description ?? '').trim()
+    const videoUrl = String(body?.videoUrl ?? '').trim()
+    const productCode = String(body?.productCode ?? '').trim()
+    if (title.length < 3) return fail(400, 'El título debe tener al menos 3 caracteres', 'INVALID_TITLE')
+    if (description.length < 3) return fail(400, 'La descripción es obligatoria', 'INVALID_DESCRIPTION')
+    const resolvedVideo = videoUrl ? videoUrl : pickVideo(title, description)
+    if (!/^(https?:\/\/|data:video\/)/.test(resolvedVideo)) return fail(400, 'El video debe ser una URL http(s) o una grabación de vídeo válida', 'INVALID_VIDEO')
+    let productId = null
+    if (productCode) {
+      const product = await db.get('SELECT id FROM products WHERE product_code = ?', productCode)
+      if (!product) return fail(404, 'Código de producto no encontrado', 'PRODUCT_CODE_NOT_FOUND')
+      productId = String(product.id)
+    }
+    const info = await db.run('INSERT INTO feed_posts (user_id, product_id, title, description, video_url) VALUES (?, ?, ?, ?, ?)', user.id, productId, title, description, resolvedVideo)
+    const row = await db.get(
+      `SELECT f.*, u.name AS user_name, p.name AS product_name, p.product_code
+       FROM feed_posts f JOIN users u ON u.id = f.user_id
+       LEFT JOIN products p ON CAST(p.id AS TEXT) = f.product_id
+       WHERE f.id = ?`,
+      info.lastId,
+    )
+    return json(await feedPostToApi(row, user.id), 201)
+  },
+
+  async patchFeed(user, id, body) {
+    const row = await db.get('SELECT * FROM feed_posts WHERE id = ?', id)
+    if (!row) return fail(404, 'Publicación no encontrada', 'NOT_FOUND')
+    if (row.user_id !== user.id) return fail(403, 'No tienes permisos sobre esta publicación', 'FORBIDDEN')
+    const title = body?.title !== undefined ? String(body.title).trim() : row.title
+    const description = body?.description !== undefined ? String(body.description).trim() : row.description
+    const videoUrl = body?.videoUrl !== undefined ? String(body.videoUrl).trim() : row.video_url
+    const productCode = body?.productCode !== undefined ? String(body.productCode).trim() : null
+    if (title.length < 3) return fail(400, 'El título debe tener al menos 3 caracteres', 'INVALID_TITLE')
+    if (description.length < 3) return fail(400, 'La descripción es obligatoria', 'INVALID_DESCRIPTION')
+    if (!/^(https?:\/\/|data:(?:video|image)\/)/.test(videoUrl)) return fail(400, 'El archivo multimedia no es válido', 'INVALID_MEDIA')
+    let productId = row.product_id
+    if (productCode !== null) {
+      if (!productCode) productId = null
+      else {
+        const product = await db.get('SELECT id FROM products WHERE product_code = ?', productCode)
+        if (!product) return fail(404, 'Código de producto no encontrado', 'PRODUCT_CODE_NOT_FOUND')
+        productId = String(product.id)
+      }
+    }
+    await db.run('UPDATE feed_posts SET title = ?, description = ?, video_url = ?, product_id = ? WHERE id = ?', title, description, videoUrl, productId, id)
+    const updated = await db.get(
+      `SELECT f.*, u.name AS user_name, p.name AS product_name, p.product_code
+       FROM feed_posts f JOIN users u ON u.id = f.user_id
+       LEFT JOIN products p ON CAST(p.id AS TEXT) = f.product_id
+       WHERE f.id = ?`,
+      id,
+    )
+    return json(await feedPostToApi(updated, user.id))
+  },
+
+  async deleteFeed(user, id) {
+    const row = await db.get('SELECT * FROM feed_posts WHERE id = ?', id)
+    if (!row) return fail(404, 'Publicación no encontrada', 'NOT_FOUND')
+    if (row.user_id !== user.id && user.role !== 'admin') return fail(403, 'No tienes permisos', 'FORBIDDEN')
+    await db.run('DELETE FROM feed_posts WHERE id = ?', row.id)
+    return new Response(null, { status: 204 })
+  },
+
+  async feedLike(user, id) {
+    if (!(await db.get('SELECT id FROM feed_posts WHERE id = ?', id))) return fail(404, 'Publicación no encontrada', 'NOT_FOUND')
+    const existing = await db.get('SELECT 1 FROM feed_likes WHERE post_id = ? AND user_id = ?', id, user.id)
+    if (existing) await db.run('DELETE FROM feed_likes WHERE post_id = ? AND user_id = ?', id, user.id)
+    else await db.run('INSERT INTO feed_likes (post_id, user_id) VALUES (?, ?)', id, user.id)
+    const count = await db.get('SELECT COUNT(*) AS count FROM feed_likes WHERE post_id = ?', id)
+    return json({ liked: !existing, likesCount: count?.count ?? 0 })
+  },
+
+  async feedComments(id) {
+    const rows = await db.all(
+      'SELECT c.id, c.post_id, c.user_id, u.name AS user_name, c.content, c.created_at FROM feed_comments c JOIN users u ON u.id = c.user_id WHERE c.post_id = ? ORDER BY c.created_at ASC',
+      id,
+    )
+    return json(paginate(rows.map((r) => ({ id: r.id, postId: r.post_id, userId: r.user_id, userName: r.user_name, content: r.content, createdAt: r.created_at }))))
+  },
+
+  async addFeedComment(user, id, body) {
+    if (user.role === 'support') return fail(403, 'La cuenta de soporte solo puede usar el chat', 'SUPPORT_CHAT_ONLY')
+    const postId = Number(id)
+    const content = String(body?.content ?? '').trim()
+    if (!(await db.get('SELECT id FROM feed_posts WHERE id = ?', postId))) return fail(404, 'Publicación no encontrada', 'NOT_FOUND')
+    if (content.length < 1 || content.length > 500) return fail(400, 'Comentario no válido', 'INVALID_COMMENT')
+    const commentId = crypto.randomUUID()
+    await db.run('INSERT INTO feed_comments (id, post_id, user_id, content) VALUES (?, ?, ?, ?)', commentId, postId, user.id, content)
+    return json({ id: commentId, postId, userId: user.id, userName: user.name, content, createdAt: new Date().toISOString() }, 201)
+  },
+
+  async deleteFeedComment(user, commentId) {
+    const row = await db.get('SELECT id, user_id FROM feed_comments WHERE id = ?', commentId)
+    if (!row) return fail(404, 'Comentario no encontrado', 'NOT_FOUND')
+    if (row.user_id !== user.id && user.role !== 'admin') return fail(403, 'No tienes permisos sobre este comentario', 'FORBIDDEN')
+    await db.run('DELETE FROM feed_comments WHERE id = ?', commentId)
+    return new Response(null, { status: 204 })
+  },
+
+  async shareFeed(user, id, body) {
+    if (user.role === 'support') return fail(403, 'La cuenta de soporte solo puede usar el chat', 'SUPPORT_CHAT_ONLY')
+    const post = await db.get('SELECT * FROM feed_posts WHERE id = ?', id)
+    const receiverId = Number(body?.receiverId)
+    if (!post) return fail(404, 'Publicación no encontrada', 'NOT_FOUND')
+    if (!(await db.get('SELECT id FROM users WHERE id = ?', receiverId)) || receiverId === user.id) return fail(400, 'Contacto no válido', 'INVALID_CONTACT')
+    const allowed =
+      !!(await db.get('SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?', user.id, receiverId)) ||
+      !!(await db.get('SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?', receiverId, user.id))
+    if (!allowed) return fail(403, 'Sigue al contacto para compartirle videos', 'FOLLOW_REQUIRED')
+    const text = `🎥 ${post.title}\n${post.description}\n${post.video_url}`
+    const info = await db.run('INSERT INTO messages (sender_id, receiver_id, content, image_url) VALUES (?, ?, ?, NULL)', user.id, receiverId, text)
+    return json({ messageId: info.lastId }, 201)
+  },
+
+  async adminModerationFeed() {
+    const rows = await db.all(
+      `SELECT f.id, f.user_id, u.name AS user_name, f.title, f.description, f.video_url, f.created_at,
+        (SELECT COUNT(*) FROM feed_comments c WHERE c.post_id = f.id) AS comments_count
+       FROM feed_posts f JOIN users u ON u.id = f.user_id
+       ORDER BY f.id DESC LIMIT 200`,
+    )
+    return json(paginate(rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      userName: row.user_name,
+      title: row.title,
+      description: row.description,
+      videoUrl: row.video_url,
+      createdAt: row.created_at,
+      commentsCount: row.comments_count,
+    }))))
+  },
+
+  async adminDeleteModerationFeed(id) {
+    const result = await db.run('DELETE FROM feed_posts WHERE id = ?', id)
+    if (result.changes === 0) return fail(404, 'Publicación no encontrada', 'NOT_FOUND')
+    return new Response(null, { status: 204 })
+  },
+
+  async adminDeleteModerationComment(commentId) {
+    const result = await db.run('DELETE FROM feed_comments WHERE id = ?', commentId)
+    if (result.changes === 0) return fail(404, 'Comentario no encontrado', 'NOT_FOUND')
+    return new Response(null, { status: 204 })
+  },
+
+  async adminModerationMessages() {
+    const rows = await db.all(
+      `SELECT m.id, m.sender_id, s.name AS sender_name, m.receiver_id, r.name AS receiver_name,
+        m.content, m.image_url, m.created_at
+       FROM messages m
+       JOIN users s ON s.id = m.sender_id
+       JOIN users r ON r.id = m.receiver_id
+       WHERE m.deleted_at IS NULL
+       ORDER BY m.id DESC LIMIT 200`,
+    )
+    return json(paginate(rows.map((row) => ({
+      id: row.id,
+      senderId: row.sender_id,
+      senderName: row.sender_name,
+      receiverId: row.receiver_id,
+      receiverName: row.receiver_name,
+      content: row.content,
+      imageUrl: row.image_url,
+      createdAt: row.created_at,
+    }))))
+  },
+
+  async adminDeleteModerationMessage(id) {
+    const result = await db.run("UPDATE messages SET content = '', image_url = NULL, deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL", id)
+    if (result.changes === 0) return fail(404, 'Mensaje no encontrado', 'NOT_FOUND')
+    return new Response(null, { status: 204 })
+  },
+
+  async adminOrderItems(id) {
+    const rows = await db.all('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', id)
+    return json({ items: rows })
   },
 
   // PAYPAL: las claves solo viven en secrets del Worker.
@@ -1710,6 +1990,7 @@ const handlers = {
     const sent = await pushToAll(env, title, message, url)
     return json({ ok: true, sent })
   },
+
 }
 
 /* ------------------------------- router -------------------------------- */
@@ -1723,6 +2004,7 @@ const ROUTES = [
   ['GET', /^\/api\/admin\/payout\/-account$/, (u) => handlers.getPayoutAccount(), true, true],
   ['PUT', /^\/api\/admin\/payout\/-account$/, (u, b) => handlers.savePayoutAccount(b), true, true],
   ['POST', /^\/api\/auth\/register$/, (u, b) => handlers.register(b), false, false],
+  ['GET', /^\/api\/auth\/email-availability$/, (u, b, req) => handlers.emailAvailability(req), false, false],
   ['POST', /^\/api\/auth\/support-login$/, (u, b) => handlers.supportLogin(b), false, false],
   ['POST', /^\/api\/auth\/support\/login$/, (u, b) => handlers.supportLogin(b), false, false],
   ['POST', /^\/api\/auth\/support-login$/, (u, b) => handlers.supportLogin(b), false, false],
@@ -1747,6 +2029,15 @@ const ROUTES = [
   ['GET', /^\/api\/categories$/, () => handlers.listCategories(), false, false],
   ['GET', /^\/api\/payout-info$/, () => handlers.payoutInfo(), false, false],
   ['GET', /^\/api\/feed$/, (u) => handlers.listFeed(u), false, false],
+  ['GET', /^\/api\/feed\/mine$/, (u) => handlers.myFeedPosts(u), true, false],
+  ['POST', /^\/api\/feed$/, (u, b) => handlers.createFeed(u, b), true, false],
+  ['PATCH', /^\/api\/feed\/(\d+)$/, (u, b, req, m) => handlers.patchFeed(u, Number(m[1]), b), true, false],
+  ['DELETE', /^\/api\/feed\/(\d+)$/, (u, b, req, m) => handlers.deleteFeed(u, Number(m[1])), true, false],
+  ['POST', /^\/api\/feed\/(\d+)\/like$/, (u, b, req, m) => handlers.feedLike(u, Number(m[1])), true, false],
+  ['GET', /^\/api\/feed\/(\d+)\/comments$/, (u, b, req, m) => handlers.feedComments(Number(m[1])), false, false],
+  ['POST', /^\/api\/feed\/(\d+)\/comments$/, (u, b, req, m) => handlers.addFeedComment(u, Number(m[1]), b), true, false],
+  ['DELETE', /^\/api\/feed\/comments\/([A-Za-z0-9-]+)$/, (u, b, req, m) => handlers.deleteFeedComment(u, m[1]), true, false],
+  ['POST', /^\/api\/feed\/(\d+)\/share$/, (u, b, req, m) => handlers.shareFeed(u, Number(m[1]), b), true, false],
   ['GET', /^\/api\/products$/, () => handlers.listProducts(), false, false],
   ['POST', /^\/api\/products$/, (u, b) => handlers.createProduct(u, b), true, false],
   ['PATCH', /^\/api\/products\/(\d+)$/, (u, b, req, m) => handlers.patchProduct(u, Number(m[1]), b), true, false],
@@ -1754,6 +2045,9 @@ const ROUTES = [
   ['GET', /^\/api\/users\/(\d+)\/products$/, (u, b, req, m) => handlers.getUserProducts(Number(m[1])), false, false],
   ['POST', /^\/api\/users\/(\d+)\/follow$/, (u, b, req, m) => handlers.follow(u, Number(m[1])), true, false],
   ['DELETE', /^\/api\/users\/(\d+)\/follow$/, (u, b, req, m) => handlers.unfollow(u, Number(m[1])), true, false],
+  ['POST', /^\/api\/users\/(\d+)\/block$/, (u, b, req, m) => handlers.blockUser(u, Number(m[1])), true, false],
+  ['DELETE', /^\/api\/users\/(\d+)\/block$/, (u, b, req, m) => handlers.unblockUser(u, Number(m[1])), true, false],
+  ['DELETE', /^\/api\/contacts\/(\d+)$/, (u, b, req, m) => handlers.deleteContact(u, Number(m[1])), true, false],
   ['GET', /^\/api\/users\/(\d+)$/, (u, b, req, m) => handlers.getUser(u, Number(m[1])), false, false],
   ['GET', /^\/api\/me\/points$/, (u) => handlers.mePoints(u), true, false],
   ['GET', /^\/api\/me\/library$/, (u) => handlers.myLibrary(u), true, false],
@@ -1768,6 +2062,8 @@ const ROUTES = [
   ['GET', /^\/api\/conversations$/, (u) => handlers.conversations(u), true, false],
   ['GET', /^\/api\/conversations\/(\d+)\/messages$/, (u, b, req, m) => handlers.getMessages(u, Number(m[1])), true, false],
   ['POST', /^\/api\/conversations\/(\d+)\/messages$/, (u, b, req, m) => handlers.sendMessage(u, Number(m[1]), b), true, false],
+  ['PATCH', /^\/api\/messages\/(\d+)$/, (u, b, req, m) => handlers.editMessage(u, Number(m[1]), b), true, false],
+  ['DELETE', /^\/api\/messages\/(\d+)$/, (u, b, req, m) => handlers.deleteMessage(u, Number(m[1])), true, false],
   ['POST', /^\/api\/orders$/, (u, b, req, m, env) => handlers.createOrder(req, b, env), false, false],
   ['GET', /^\/api\/orders\/track\/([A-Za-z0-9]+)$/, (u, b, req, m) => handlers.trackOrder(m[1]), false, false],
   ['POST', /^\/api\/admin\/orders\/(\d+)\/approve$/, (u, b, req, m, env) => handlers.adminApproveOrder(Number(m[1]), env), true, true],
@@ -1779,6 +2075,12 @@ const ROUTES = [
   ['GET', /^\/api\/products\/(\w+)\/reviews$/, (u, b, req, m) => handlers.getReviews(m[1]), false, false],
   ['POST', /^\/api\/products\/(\w+)\/reviews$/, (u, b, req, m) => handlers.addReview(u, m[1], b), true, false],
   ['DELETE', /^\/api\/products\/(\w+)\/reviews$/, (u, b, req, m) => handlers.deleteReview(u, m[1]), true, false],
+  ['GET', /^\/api\/admin\/moderation\/feed$/, (u) => handlers.adminModerationFeed(), true, true],
+  ['DELETE', /^\/api\/admin\/moderation\/feed\/(\d+)$/, (u, b, req, m) => handlers.adminDeleteModerationFeed(Number(m[1])), true, true],
+  ['DELETE', /^\/api\/admin\/moderation\/comments\/([A-Za-z0-9-]+)$/, (u, b, req, m) => handlers.adminDeleteModerationComment(m[1]), true, true],
+  ['GET', /^\/api\/admin\/moderation\/messages$/, (u) => handlers.adminModerationMessages(), true, true],
+  ['DELETE', /^\/api\/admin\/moderation\/messages\/(\d+)$/, (u, b, req, m) => handlers.adminDeleteModerationMessage(Number(m[1])), true, true],
+  ['GET', /^\/api\/admin\/orders\/(\d+)\/items$/, (u, b, req, m) => handlers.adminOrderItems(Number(m[1])), true, true],
   ['GET', /^\/api\/admin\/products$/, (u) => handlers.adminProducts(), true, true],
   ['GET', /^\/api\/admin\/orders$/, (u) => handlers.adminOrders(), true, true],
   ['PATCH', /^\/api\/admin\/orders\/(\d+)\/status$/, (u, b, req, m) => handlers.adminOrderStatus(Number(m[1]), b), true, true],
