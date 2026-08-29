@@ -1,0 +1,4 @@
+Vertamart v1.2.0
+
+- Instalador de escritorio (Windows) y APK de Android.
+- Version bump de la app de escritorio y de la web.
