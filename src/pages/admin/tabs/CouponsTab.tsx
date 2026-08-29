@@ -14,9 +14,10 @@ interface CouponForm {
   startsAt: string
   expiresAt: string
   maxUses: string
+  usedCount: string
 }
 
-const emptyForm: CouponForm = { code: '', type: 'percent', percent: '10', value: '', minAmount: '0', startsAt: '', expiresAt: '', maxUses: '' }
+const emptyForm: CouponForm = { code: '', type: 'percent', percent: '10', value: '', minAmount: '0', startsAt: '', expiresAt: '', maxUses: '', usedCount: '0' }
 
 export function CouponsTab() {
   const { region, promos, setPromos, notify, loading } = useAdmin()
@@ -51,7 +52,7 @@ export function CouponsTab() {
     setForm({
       code: p.code, type: p.type, percent: String(p.percent), value: p.value ? String(p.value) : '',
       minAmount: String(p.minAmount), startsAt: p.startsAt ?? '', expiresAt: p.expiresAt ?? '',
-      maxUses: p.maxUses ? String(p.maxUses) : '',
+      maxUses: p.maxUses ? String(p.maxUses) : '', usedCount: String(p.usedCount),
     })
     setFormError('')
     setShowForm(true)
@@ -73,7 +74,7 @@ export function CouponsTab() {
         maxUses: form.maxUses ? Number(form.maxUses) : undefined,
       }
       if (editing) {
-        const updated = await storeService.adminUpdatePromoCode(editing.id, { ...base, usedCount: editing.usedCount })
+        const updated = await storeService.adminUpdatePromoCode(editing.id, { ...base, usedCount: Math.max(0, Number(form.usedCount) || 0) })
         setPromos(promos.map((p) => (p.id === updated.id ? updated : p)))
         notify('Cupón actualizado correctamente')
       } else {
@@ -100,6 +101,14 @@ export function CouponsTab() {
       setPromos(promos.filter((p) => !ids.includes(p.id)))
       notify(ids.length === 1 ? 'Cupón eliminado' : `${ids.length} cupones eliminados`, 'info')
     } catch (err) { notify(err instanceof Error ? err.message : 'No se pudo eliminar', 'info') } finally { setBusy(false); setConfirmDel(null) }
+  }
+
+  const resetUses = async (p: PromoCode) => {
+    try {
+      const updated = await storeService.adminUpdatePromoCode(p.id, { usedCount: 0 })
+      setPromos(promos.map((x) => (x.id === p.id ? updated : x)))
+      notify(`Contador de usos de ${p.code} restablecido a 0`)
+    } catch (err) { notify(err instanceof Error ? err.message : 'No se pudo restablecer', 'info') }
   }
 
   const bulkActive = async (active: boolean) => {
@@ -156,6 +165,9 @@ export function CouponsTab() {
               <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
                 <StatusBadge status={p.active ? 'active' : 'hidden'} label={p.active ? 'Activo' : 'Inactivo'} />
                 <div className="flex gap-1">
+                  {p.usedCount > 0 && (
+                    <button onClick={() => void resetUses(p)} title="Restablecer contador de usos" className="rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50">Reset usos</button>
+                  )}
                   <button onClick={() => void toggleActive(p)} className="rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50">{p.active ? 'Desactivar' : 'Activar'}</button>
                   <button onClick={() => openEdit(p)} className="rounded-lg p-1.5 text-brand-700 hover:bg-brand-50"><Pencil className="h-3.5 w-3.5" /></button>
                   <button onClick={() => setConfirmDel({ ids: [p.id], label: p.code })} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
@@ -192,6 +204,9 @@ export function CouponsTab() {
             <Field label="Caducidad (opcional)"><input type="date" className={inputCls} value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} /></Field>
             <Field label="Límite de usos (opcional)"><input type="number" min="1" className={inputCls} value={form.maxUses} onChange={(e) => setForm({ ...form, maxUses: e.target.value })} /></Field>
           </div>
+          {editing && (
+            <Field label="Usos actuales (contador)"><input type="number" min="0" className={inputCls} value={form.usedCount} onChange={(e) => setForm({ ...form, usedCount: e.target.value })} /></Field>
+          )}
           {formError && <p className="rounded-xl bg-red-50 px-4 py-2 text-sm text-red-600">{formError}</p>}
           <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
             <button type="button" onClick={() => setShowForm(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancelar</button>

@@ -14,6 +14,7 @@ interface FileForm {
   support: string
   includes: string
   requirements: string
+  downloads: string
 }
 
 export function FilesTab() {
@@ -45,6 +46,7 @@ export function FilesTab() {
     setForm({
       fileType: p.fileType, fileSize: p.fileSize, compatibility: p.compatibility, license: p.license,
       updates: p.updates, support: p.support, includes: p.includes.join('\n'), requirements: p.requirements.join('\n'),
+      downloads: String(p.downloads),
     })
     setError('')
   }
@@ -63,6 +65,7 @@ export function FilesTab() {
         support: form.support.trim(),
         includes: form.includes.split('\n').map((s) => s.trim()).filter(Boolean),
         requirements: form.requirements.split('\n').map((s) => s.trim()).filter(Boolean),
+        downloads: Math.max(0, Number(form.downloads) || 0),
       })
       setProducts(products.map((p) => (p.id === updated.id ? updated : p)))
       refresh()
@@ -143,7 +146,10 @@ export function FilesTab() {
               <Field label="Licencia"><input className={inputCls} value={form.license} onChange={(e) => setForm({ ...form, license: e.target.value })} /></Field>
               <Field label="Actualizaciones"><input className={inputCls} value={form.updates} onChange={(e) => setForm({ ...form, updates: e.target.value })} /></Field>
             </div>
-            <Field label="Soporte"><input className={inputCls} value={form.support} onChange={(e) => setForm({ ...form, support: e.target.value })} /></Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Soporte"><input className={inputCls} value={form.support} onChange={(e) => setForm({ ...form, support: e.target.value })} /></Field>
+              <Field label="Nº de descargas"><input type="number" min="0" className={inputCls} value={form.downloads} onChange={(e) => setForm({ ...form, downloads: e.target.value })} /></Field>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Qué incluye (una por línea)"><textarea rows={4} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" value={form.includes} onChange={(e) => setForm({ ...form, includes: e.target.value })} /></Field>
               <Field label="Requisitos (una por línea)"><textarea rows={4} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" value={form.requirements} onChange={(e) => setForm({ ...form, requirements: e.target.value })} /></Field>
