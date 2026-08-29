@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDownToLine, ArrowUpFromLine, Landmark, MessageSquare, Send, Wallet } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, FlaskConical, Landmark, MessageSquare, Send, ShieldCheck, Wallet } from 'lucide-react'
 import { storeService, type PayoutAccount } from '../../../api/services/store'
 import { useAdmin } from '../context'
 import { Field, inputCls, StatusBadge } from '../ui'
@@ -18,6 +18,26 @@ export function SettingsTab() {
   const [pushForm, setPushForm] = useState({ title: 'Vertamart', message: '', url: '/' })
   const [pushSending, setPushSending] = useState(false)
   const [busyTx, setBusyTx] = useState<number | null>(null)
+  const [demoOn, setDemoOn] = useState<boolean | null>(null)
+  const [stripeMode, setStripeMode] = useState<string>('test')
+  const [stripeConfigured, setStripeConfigured] = useState(false)
+  const [settingsSaving, setSettingsSaving] = useState(false)
+
+  useEffect(() => {
+    storeService.adminGetSettings()
+      .then((s) => { setDemoOn(s.demoPaymentsEnabled); setStripeMode(s.stripeMode); setStripeConfigured(s.stripeConfigured) })
+      .catch(() => 0)
+  }, [])
+
+  const toggleDemo = async () => {
+    if (demoOn === null) return
+    setSettingsSaving(true)
+    try {
+      const s = await storeService.adminPatchSettings({ demoPayments: !demoOn })
+      setDemoOn(s.demoPaymentsEnabled)
+      notify(!demoOn ? 'Compra simulada activada (solo administradores)' : 'Compra simulada desactivada')
+    } catch { notify('No se pudo actualizar el ajuste', 'info') } finally { setSettingsSaving(false) }
+  }
 
   const savePayout = async (e: FormEvent) => {
     e.preventDefault()
@@ -62,6 +82,43 @@ export function SettingsTab() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      {/* Pagos: estado de Stripe + compra simulada */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-green-600"><ShieldCheck className="h-5 w-5" /></span>
+          <div>
+            <h2 className="font-bold text-slate-900">Pagos reales (Stripe)</h2>
+            <p className="text-sm text-slate-500">Estado del procesador y ajustes del simulador.</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {stripeConfigured ? (
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${stripeMode === 'live' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+              <FlaskConical className="h-3.5 w-3.5" /> Stripe conectado · {stripeMode === 'live' ? 'MODO PRODUCCIÓN (cobros reales)' : 'MODO PRUEBA (sin cobros reales)'}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">
+              Stripe no configurado — añade STRIPE_SECRET_KEY en el worker
+            </span>
+          )}
+        </div>
+        <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-slate-200 p-4">
+          <div>
+            <p className="font-bold text-slate-800">Compra simulada (demo)</p>
+            <p className="text-xs text-slate-500">Cuando está activa, los administradores pueden pagar con el simulador en el checkout. Los clientes normales siempre pagan con Stripe.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void toggleDemo()}
+            disabled={settingsSaving || demoOn === null}
+            aria-pressed={demoOn === true}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50 ${demoOn ? 'bg-brand-600' : 'bg-slate-300'}`}
+          >
+            <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${demoOn ? 'left-[22px]' : 'left-0.5'}`} />
+          </button>
+        </div>
+      </section>
+
       {/* Cuenta receptora */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-3">

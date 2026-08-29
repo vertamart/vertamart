@@ -331,6 +331,10 @@ export const storeService = {
   myLibrary() {
     return apiFetch<{ items: LibraryItem[] }>('/me/library', { headers: authHeaders() })
   },
+  /** Historial de compras del usuario. */
+  myOrders() {
+    return apiFetch<{ items: { id: number; total: number; discount: number; status: string; paymentMethod: string; createdAt: string; pointsEarned: number; items: { productId: string; name: string; price: number; qty: number; licenseKey: string | null }[] }[] }>('/me/orders', { headers: authHeaders() })
+  },
   /** Añade un producto gratuito a la biblioteca del usuario (con licencia). */
   freeProduct(productId: string) {
     return apiFetch<{ id: number; licenseKey: string; status: string }>('/me/library/free', {
@@ -342,6 +346,46 @@ export const storeService = {
   /** Historial de versiones de un producto (público). */
   productVersions(productId: string) {
     return apiFetch<{ currentVersion: string; items: { id: number; version: string; notes: string; createdAt: string }[] }>(`/products/${encodeURIComponent(productId)}/versions`)
+  },
+
+  /* ----------------------- Pagos reales (Stripe) ----------------------- */
+  /** Crea una sesión de Checkout de Stripe; el backend calcula el precio real. */
+  createStripeCheckout(input: { items: { productId: string; name: string; price: number; qty: number }[]; promoCode?: string }) {
+    return apiFetch<{ url: string; sessionId: string; orderId: number }>('/checkout/stripe', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: input,
+    })
+  },
+  /** Ajustes públicos: si Stripe está activo y si la demo está permitida. */
+  publicSettings() {
+    return apiFetch<{ stripeConfigured: boolean; demoPaymentsEnabled: boolean; stripeMode: string }>('/settings')
+  },
+  /** Métodos de pago guardados del usuario (solo marca y últimos 4). */
+  paymentMethods() {
+    return apiFetch<{ items: { id: string; brand: string; last4: string; expMonth: number | null; expYear: number | null; isDefault: boolean }[]; enabled: boolean }>('/me/payment-methods', { headers: authHeaders() })
+  },
+  createPaymentSetup() {
+    return apiFetch<{ clientSecret: string }>('/me/payment-methods/setup', { method: 'POST', headers: authHeaders() })
+  },
+  setDefaultPaymentMethod(id: string) {
+    return apiFetch<{ ok: boolean }>(`/me/payment-methods/${id}/default`, { method: 'POST', headers: authHeaders() })
+  },
+  deletePaymentMethod(id: string) {
+    return apiFetch<void>(`/me/payment-methods/${id}`, { method: 'DELETE', headers: authHeaders() })
+  },
+  /** Panel: saldo, liquidaciones, cobros y reembolsos de Stripe. */
+  adminStripeFinance() {
+    return apiFetch<{ mode: string; currency: string; available: { amount: number; currency: string }[]; pending: { amount: number; currency: string }[]; payouts: { id: string; amount: number; status: string; arrivalDate: number; currency: string }[]; charges: { id: string; amount: number; status: string; paid: boolean; refunded: boolean; currency: string; created: number; email: string | null }[] }>('/admin/stripe/finance', { headers: authHeaders() })
+  },
+  adminStripeRefund(chargeId: string, amount?: number) {
+    return apiFetch<{ id: string; status: string; amount: number }>('/admin/stripe/refund', { method: 'POST', headers: authHeaders(), body: { chargeId, ...(amount ? { amount } : {}) } })
+  },
+  adminGetSettings() {
+    return apiFetch<{ demoPaymentsEnabled: boolean; stripeConfigured: boolean; stripeMode: string; invoiceEnabled: boolean }>('/admin/settings', { headers: authHeaders() })
+  },
+  adminPatchSettings(body: { demoPayments?: boolean }) {
+    return apiFetch<{ demoPaymentsEnabled: boolean; stripeConfigured: boolean; stripeMode: string; invoiceEnabled: boolean }>('/admin/settings', { method: 'PATCH', headers: authHeaders(), body })
   },
   /** Descarga un producto comprado (requiere sesión): devuelve el blob del archivo. */
   /** Devuelve el archivo real del producto y su nombre de fichero. */

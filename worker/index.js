@@ -8,15 +8,32 @@
 
 import bcrypt from 'bcryptjs'
 import { WorkerMailer } from 'worker-mailer'
+import Stripe from 'stripe'
 
 /** Binding D1 inyectado por wrangler (env.DB). */
 let DB = null
+
+/** Cliente Stripe (lazy): solo se crea si hay clave secreta configurada. */
+let STRIPE = null
+function getStripe(env) {
+  const key = env?.STRIPE_SECRET_KEY || ''
+  if (!key) return null
+  if (!STRIPE) {
+    STRIPE = new Stripe(key, { apiVersion: '2024-06-20' })
+  }
+  return STRIPE
+}
+/** Modo actual: 'test' o 'live', según el prefijo de la clave secreta. */
+function stripeMode(env) {
+  const key = env?.STRIPE_SECRET_KEY || ''
+  return key.startsWith('sk_live') ? 'live' : 'test'
+}
 
 const SALT_ROUNDS = 10
 const SESSION_TTL_DAYS = 30
 const LOW_STOCK_THRESHOLD = 3
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const ORDER_STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'cancelled']
+const ORDER_STATUSES = ['pending', 'paid', 'shipped', 'delivered', 'cancelled', 'failed', 'refunded']
 const PRODUCT_STATUSES = ['active', 'hidden']
 const MESSAGE_MAX_LENGTH = 2000
 
@@ -421,6 +438,7 @@ function digitalDefaults(category) {
     plugins: { fileType: 'ZIP', fileSize: '10 MB', compatibility: 'Figma · VS Code · Canva' },
     cursos: { fileType: 'MP4', fileSize: '3 GB', compatibility: 'Reproductor de vídeo' },
     packs: { fileType: 'ZIP', fileSize: '500 MB', compatibility: 'Windows · macOS · Linux' },
+    android: { fileType: 'ZIP', fileSize: '45 MB', compatibility: 'Android 8+ · Launchers' },
   }
   return map[category] ?? { fileType: 'ZIP', fileSize: '10 MB', compatibility: 'Windows · macOS · Linux' }
 }
@@ -498,7 +516,7 @@ async function ensureAdminSchema() {
     const existing = await db.get('SELECT COUNT(*) AS n FROM categories')
     if ((existing?.n ?? 0) === 0) {
       const rows = await db.all('SELECT DISTINCT category FROM products')
-      const label = { plantillas: 'Plantillas', presets: 'Presets', iconos: 'Iconos', fuentes: 'Fuentes', 'modelos-3d': 'Modelos 3D', plugins: 'Plugins', cursos: 'Cursos', packs: 'Packs', audio: 'Audio', wearables: 'Wearables', teclado: 'Teclados', mouse: 'Mouse', carga: 'Carga', monitor: 'Monitores', streaming: 'Streaming', oficina: 'Oficina', accesorios: 'Accesorios', general: 'General' }
+      const label = { plantillas: 'Plantillas', presets: 'Presets', iconos: 'Iconos', fuentes: 'Fuentes', 'modelos-3d': 'Modelos 3D', plugins: 'Plugins', cursos: 'Cursos', packs: 'Packs', android: 'Android', audio: 'Audio', wearables: 'Wearables', teclado: 'Teclados', mouse: 'Mouse', carga: 'Carga', monitor: 'Monitores', streaming: 'Streaming', oficina: 'Oficina', accesorios: 'Accesorios', general: 'General' }
       for (const r of rows) {
         const key = String(r.category).trim()
         if (!key) continue
@@ -510,6 +528,13 @@ async function ensureAdminSchema() {
     const prodCols = await db.all(`PRAGMA table_info(products)`)
     if (!prodCols.some((c) => c.name === 'version')) {
       await db.run(`ALTER TABLE products ADD COLUMN version TEXT NOT NULL DEFAULT '1.0.0'`)
+    }
+    // Ajustes globales (key/value) + cliente Stripe por usuario
+    await db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`)
+    await db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('demo_payments', '1')`)
+    const userCols = await db.all(`PRAGMA table_info(users)`)
+    if (!userCols.some((c) => c.name === 'stripe_customer_id')) {
+      await db.run(`ALTER TABLE users ADD COLUMN stripe_customer_id TEXT`)
     }
     // Historial de versiones de cada producto (changelog visible para compradores)
     await db.run(`CREATE TABLE IF NOT EXISTS product_versions (
@@ -1422,10 +1447,159 @@ function buildProductFile(p, licenseKey) {
     files.push({ name: 'contenido.html', data: text(genericContentHtml(p)) })
     return zipResult(p, base(files))
   }
+  if (cat === 'android') {
+    const lower = `${p.name} ${p.description ?? ''}`.toLowerCase()
+    const files = []
+    if (lower.includes('icon')) {
+      const names = ['camera', 'gallery', 'mail', 'music', 'phone', 'settings', 'maps', 'clock', 'weather', 'games']
+      files.push(...names.map((n, i) => ({ name: `iconos/android-${n}.svg`, data: text(makeAndroidIcon(n, i)) })))
+      files.push({ name: 'iconos/preview.html', data: text(androidIconsPreviewHtml(p, names)) })
+    }
+    if (lower.includes('wallpaper') || lower.includes('fondo')) {
+      const tones = ['#14532d', '#16a34a', '#052e16', '#0b1220', '#1e3a2f']
+      tones.forEach((c, i) => files.push({ name: `wallpapers/fondo-${i + 1}.svg`, data: text(makeAndroidWallpaper(p, c, i + 1)) }))
+      files.push({ name: 'wallpapers/README.txt', data: text('Fondos 1440×3200 (escala a tu pantalla). Formato SVG escalable sin pérdida.') })
+    }
+    if (lower.includes('ui kit') || lower.includes('interfaz')) {
+      files.push({ name: 'uikit/componentes.html', data: text(androidUiKitHtml(p)) })
+      files.push({ name: 'uikit/colors.xml', data: text(androidColorsXml()) })
+      files.push({ name: 'uikit/strings.xml', data: text(androidStringsXml()) })
+    }
+    if (lower.includes('launcher')) {
+      files.push({ name: 'launcher/manifest.json', data: text(androidLauncherManifest(p)) })
+      files.push({ name: 'launcher/iconos-extra.svg', data: text(makeAndroidIcon('apps', 9)) })
+    }
+    if (lower.includes('developer') || lower.includes('desarrollador')) {
+      files.push({ name: 'dev/MainActivity.kt', data: text(androidKotlinSample(p)) })
+      files.push({ name: 'dev/build.gradle.kts', data: text(androidGradleSample()) })
+      files.push({ name: 'dev/AndroidManifest.xml', data: text(androidManifestSample(p)) })
+    }
+    files.push({ name: 'contenido.html', data: text(genericContentHtml(p)) })
+    return zipResult(p, base(files))
+  }
   // Categoría genérica: nunca entrega vacío
   return zipResult(p, base([
     { name: 'contenido.html', data: text(genericContentHtml(p)) },
   ]))
+}
+
+/* --------------------- generadores de contenido Android ------------------ */
+function makeAndroidIcon(name, i) {
+  const colors = ['#16a34a', '#22c55e', '#4ade80', '#15803d', '#0f172a', '#2563eb', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6']
+  const c = colors[i % colors.length]
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"><rect width="192" height="192" rx="42" fill="${c}"/><g stroke="#fff" stroke-width="12" stroke-linecap="round" fill="none">${androidIconPath(name)}</g></svg>`
+}
+function androidIconPath(name) {
+  const p = {
+    camera: '<circle cx="96" cy="96" r="30"/><path d="M66 60 L74 42 H118 L126 60 M60 60 H132 V138 H60 Z"/>',
+    gallery: '<rect x="52" y="56" width="88" height="80" rx="14"/><circle cx="78" cy="84" r="10"/><path d="M56 126 L86 100 L104 116 L122 100 L138 118"/>',
+    mail: '<rect x="46" y="60" width="100" height="72" rx="14"/><path d="M50 66 L96 104 L142 66"/>',
+    music: '<path d="M84 118 V66 L132 56 V108"/><circle cx="70" cy="118" r="16"/><circle cx="118" cy="108" r="16"/>',
+    phone: '<path d="M66 44 H126 V148 H66 Z M84 120 H108"/>',
+    settings: '<circle cx="96" cy="96" r="22"/><circle cx="96" cy="96" r="40" stroke-dasharray="18 14"/>',
+    maps: '<path d="M96 44 C70 44 54 64 54 84 C54 108 96 148 96 148 C96 148 138 108 138 84 C138 64 122 44 96 44 Z"/><circle cx="96" cy="82" r="12"/>',
+    clock: '<circle cx="96" cy="96" r="40"/><path d="M96 70 V98 L116 112"/>',
+    weather: '<circle cx="96" cy="74" r="22"/><path d="M74 118 H126 C136 118 142 110 142 102 C142 94 136 88 126 88 C122 88 118 90 116 92"/><path d="M96 44 V30 M140 74 H152 M52 74 H64 M128 48 L136 40 M64 48 L56 40"/>',
+    games: '<rect x="44" y="84" width="104" height="56" rx="20"/><path d="M76 84 V70 H116 V84 M64 104 H84 M74 94 V114 M84 104 H104"/>',
+    apps: '<rect x="56" y="56" width="32" height="32" rx="8"/><rect x="104" y="56" width="32" height="32" rx="8"/><rect x="56" y="104" width="32" height="32" rx="8"/><rect x="104" y="104" width="32" height="32" rx="8"/>',
+  }
+  return p[name] ?? '<circle cx="96" cy="96" r="30"/>'
+}
+function makeAndroidWallpaper(p, color, n) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="3200" viewBox="0 0 1440 3200"><defs><radialGradient id="g${n}" cx="50%" cy="35%" r="75%"><stop offset="0%" stop-color="${color}"/><stop offset="100%" stop-color="#020617"/></radialGradient></defs><rect width="1440" height="3200" fill="url(#g${n})"/><circle cx="720" cy="900" r="260" fill="none" stroke="#ffffff22" stroke-width="4"/><circle cx="720" cy="900" r="420" fill="none" stroke="#ffffff14" stroke-width="4"/><text x="720" y="1600" text-anchor="middle" fill="#ffffffcc" font-family="sans-serif" font-size="72" font-weight="700">${escHtml(p.name.split(' ').slice(0, 3).join(' '))}</text><text x="720" y="1680" text-anchor="middle" fill="#ffffff66" font-family="sans-serif" font-size="34">Vertamart · demo de demostración</text></svg>`
+}
+function androidIconsPreviewHtml(p, names) {
+  const tiles = names.map((n) => `<div style="display:inline-block;text-align:center;margin:10px"><img src="android-${n}.svg" width="72" height="72"><p style="color:#94a3b8;font-size:12px">${n}</p></div>`).join('')
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escHtml(p.name)} — vista previa</title></head><body style="background:#0b1220;font-family:system-ui;padding:30px"><h1 style="color:#86efac;font-size:20px">${escHtml(p.name)}</h1><p style="color:#64748b;font-size:13px">Iconos SVG listos para tu launcher o aplicación. Contenido de demostración.</p><div style="margin-top:20px">${tiles}</div></body></html>`
+}
+function androidUiKitHtml(p) {
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(p.name)}</title><style>body{font-family:system-ui;background:#0b1220;color:#e2e8f0;padding:30px;max-width:640px;margin:auto}h1{color:#86efac;font-size:22px}.card{background:#111a2e;border:1px solid #1e293b;border-radius:16px;padding:20px;margin:14px 0}.btn{display:inline-block;background:#16a34a;color:#fff;padding:10px 22px;border-radius:999px;font-weight:700}.chip{display:inline-block;background:#16a34a22;color:#86efac;padding:4px 12px;border-radius:999px;font-size:12px;margin:2px}input{width:100%;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:12px;color:#fff;margin:6px 0}</style></head><body><h1>${escHtml(p.name)}</h1><p>Componentes Material adaptados a la identidad verde de Vertamart. Contenido de demostración para diseñar tu app Android.</p><div class="card"><p style="font-size:12px;color:#64748b">Botón</p><span class="btn">Continuar</span></div><div class="card"><p style="font-size:12px;color:#64748b">Chips</p><span class="chip">Inicio</span><span class="chip">Categorías</span><span class="chip">Ajustes</span></div><div class="card"><p style="font-size:12px;color:#64748b">Campo de texto</p><input placeholder="Buscar…"></div></body></html>`
+}
+function androidColorsXml() {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="verta_green">#16A34A</color>
+  <color name="verta_green_dark">#15803D</color>
+  <color name="verta_bg">#0B1220</color>
+  <color name="verta_surface">#111A2E</color>
+  <color name="verta_text">#E2E8F0</color>
+  <color name="verta_muted">#64748B</color>
+</resources>`
+}
+function androidStringsXml() {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">Vertamart Demo</string>
+  <string name="welcome">Bienvenido a Vertamart</string>
+  <string name="action_download">Descargar</string>
+  <string name="action_buy">Comprar</string>
+</resources>`
+}
+function androidLauncherManifest(p) {
+  return JSON.stringify({ name: p.name, version: p.version ?? '1.0.0', type: 'launcher-resources', iconCount: 12, wallpaperCount: 5, license: p.license ?? 'Uso personal', note: 'Contenido de demostración de Vertamart' }, null, 2)
+}
+function androidKotlinSample(p) {
+  return `package com.vertamart.demo
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.material3.*
+
+/** Ejemplo funcional de MainActivity para el pack de desarrollo (demo). */
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                Scaffold { padding ->
+                    Column(Modifier.padding(padding).padding(24.dp)) {
+                        Text(text = "${escHtml(p.name)}", style = MaterialTheme.typography.headlineMedium)
+                        Text(text = "Pack de desarrollo de demostración de Vertamart")
+                        Button(onClick = { /* acción de ejemplo */ }) { Text("Descargar") }
+                    }
+                }
+            }
+        }
+    }
+}`
+}
+function androidGradleSample() {
+  return `plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.vertamart.demo"
+    compileSdk = 34
+    defaultConfig {
+        applicationId = "com.vertamart.demo"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.compose.ui:ui:1.6.8")
+    implementation("androidx.compose.material3:material3:1.2.1")
+}`
+}
+function androidManifestSample(p) {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="${escHtml(p.name)}" android:theme="@style/Theme.Vertamart">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>`
 }
 
 function promoToApi(r) {
@@ -2378,6 +2552,196 @@ const handlers = {
     return new Response(null, { status: 204 })
   },
 
+  /* ------------------------- PAGOS REALES (Stripe) ------------------------ */
+
+  // Ajustes globales de la tienda (tabla key/value).
+  async adminGetSettings(env) {
+    const rows = await db.all('SELECT key, value FROM settings')
+    const map = Object.fromEntries(rows.map((r) => [r.key, r.value]))
+    return json({ demoPaymentsEnabled: map.demo_payments === '1', stripeConfigured: !!getStripe(env), stripeMode: stripeMode(env), invoiceEnabled: false })
+  },
+
+  async adminPatchSettings(body) {
+    if (body?.demoPayments !== undefined) {
+      await db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', 'demo_payments', body.demoPayments ? '1' : '0')
+    }
+    return this.adminGetSettings()
+  },
+
+  // Configuración pública: si Stripe está activo y si la demo está permitida.
+  async getPublicSettings(env) {
+    const row = await db.get("SELECT value FROM settings WHERE key = 'demo_payments'")
+    return json({
+      stripeConfigured: !!getStripe(env),
+      demoPaymentsEnabled: row?.value === '1',
+      stripeMode: stripeMode(env),
+    })
+  },
+
+  // Cliente Stripe del usuario (se crea una sola vez y se guarda su id).
+  async getOrCreateStripeCustomer(user, env) {
+    const stripe = getStripe(env)
+    if (!stripe) return null
+    let cid = (await db.get('SELECT stripe_customer_id FROM users WHERE id = ?', user.id))?.stripe_customer_id
+    if (cid) return cid
+    const customer = await stripe.customers.create({
+      email: user.email,
+      name: user.name,
+      metadata: { userId: String(user.id) },
+    })
+    await db.run('UPDATE users SET stripe_customer_id = ? WHERE id = ?', customer.id, user.id)
+    return customer.id
+  },
+
+  // Crea el pedido pendiente + sesión de Checkout de Stripe.
+  // El backend calcula el PRECIO REAL desde la BD (nunca confía en el frontend)
+  // y aplica el cupón de forma segura.
+  async stripeCheckout(user, body, env) {
+    const stripe = getStripe(env)
+    if (!stripe) return fail(503, 'Stripe no está configurado aún', 'STRIPE_NOT_CONFIGURED')
+    const rawItems = Array.isArray(body?.items) ? body.items : []
+    if (rawItems.length === 0) return fail(400, 'El carrito está vacío', 'EMPTY_CART')
+    const frontend = env.FRONTEND_URL || 'https://vertamart.pages.dev'
+
+    // 1) Precios reales desde la BD + validación de stock.
+    const items = []
+    let subtotal = 0
+    for (const it of rawItems) {
+      const pid = String(it.productId ?? '')
+      const product = await db.get('SELECT * FROM products WHERE id = ?', pid)
+      if (!product || product.status !== 'active') return fail(404, `Producto no disponible: ${String(it.name ?? pid)}`, 'PRODUCT_UNAVAILABLE')
+      const qty = Math.max(1, Math.min(Number(it.qty ?? 1), 99))
+      if (Number(product.stock) < qty && Number(product.stock) >= 0) return fail(400, 'Stock insuficiente', 'OUT_OF_STOCK')
+      const price = Number(product.price) || 0
+      subtotal += price * qty
+      items.push({ productId: pid, name: product.name, price, qty })
+    }
+
+    // 2) Cupón validado en el servidor (porcentaje o cantidad fija).
+    let discount = 0
+    let couponCode = null
+    const code = String(body?.promoCode ?? '').trim().toUpperCase()
+    if (code) {
+      const pc = await db.get('SELECT * FROM promo_codes WHERE code = ?', code)
+      const now = new Date().toISOString()
+      if (pc && pc.active === 1 && (!pc.starts_at || pc.starts_at <= now) && (!pc.expires_at || pc.expires_at > now) && (pc.max_uses == null || (pc.used_count ?? 0) < pc.max_uses) && subtotal >= (pc.min_amount ?? 0)) {
+        if (pc.type === 'fixed' && pc.value) discount = Math.min(pc.value, subtotal)
+        else discount = Math.round((subtotal * (pc.percent ?? 0)) / 100)
+        couponCode = code
+      }
+    }
+    const total = Math.max(0, subtotal - discount)
+
+    // 3) Pedido PENDIENTE con id único (idempotencia: el webhook solo lo libera una vez).
+    const trackingToken = randomToken()
+    const order = await db.run(
+      `INSERT INTO orders (user_id, customer_name, customer_email, subtotal, discount, shipping, total, status, tracking_token)
+       VALUES (?, ?, ?, ?, ?, 0, ?, 'pending', ?)`,
+      user.id, user.name, user.email, subtotal, discount, total, trackingToken,
+    )
+    for (const it of items) {
+      await db.run(
+        'INSERT INTO order_items (order_id, product_id, name, price, qty) VALUES (?, ?, ?, ?, ?)',
+        order.lastId, it.productId, it.name, it.price, it.qty,
+      )
+    }
+
+    // 4) Sesión de Checkout alojada por Stripe (PCI: la tarjeta nunca pasa por nosotros).
+    const currency = (env.STRIPE_CURRENCY || 'eur').toLowerCase()
+    const customerId = await this.getOrCreateStripeCustomer(user, env)
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer: customerId,
+      client_reference_id: String(order.lastId),
+      customer_email: customerId ? undefined : user.email,
+      line_items: [
+        ...items.map((it) => ({ price_data: { currency, product_data: { name: it.name }, unit_amount: it.price }, quantity: it.qty })),
+        ...(discount > 0 ? [{ price_data: { currency, product_data: { name: `Descuento ${couponCode}` }, unit_amount: -discount }, quantity: 1 }] : []),
+      ],
+      allow_promotion_codes: false,
+      success_url: `${frontend}/pago/exito?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${frontend}/pago/cancelado`,
+      metadata: { orderId: String(order.lastId) },
+    })
+    await db.run('UPDATE orders SET transaction_id = ? WHERE id = ?', session.id, order.lastId)
+
+    return json({ url: session.url, sessionId: session.id, orderId: order.lastId }, 201)
+  },
+
+  // Métodos de pago guardados del usuario (solo info no sensible: marca, últimos 4).
+  async mePaymentMethods(user, env) {
+    const stripe = getStripe(env)
+    if (!stripe) return json({ items: [], enabled: false })
+    const customerId = await this.getOrCreateStripeCustomer(user, env)
+    const customer = await stripe.customers.retrieve(customerId)
+    const defaultPm = typeof customer === 'object' && !customer.deleted ? customer.invoice_settings?.default_payment_method : null
+    const pms = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 20 })
+    const items = pms.data.map((pm) => ({
+      id: pm.id,
+      brand: pm.card?.brand ?? 'tarjeta',
+      last4: pm.card?.last4 ?? '',
+      expMonth: pm.card?.exp_month ?? null,
+      expYear: pm.card?.exp_year ?? null,
+      isDefault: pm.id === defaultPm,
+    }))
+    return json({ items, enabled: true })
+  },
+
+  // SetupIntent para añadir una tarjeta sin almacenarla en nuestra BD.
+  async createPaymentSetup(user, env) {
+    const stripe = getStripe(env)
+    if (!stripe) return fail(503, 'Stripe no está configurado', 'STRIPE_NOT_CONFIGURED')
+    const customerId = await this.getOrCreateStripeCustomer(user, env)
+    const setup = await stripe.setupIntents.create({ customer: customerId, payment_method_types: ['card', 'paypal'] })
+    return json({ clientSecret: setup.client_secret })
+  },
+
+  async setDefaultPaymentMethod(user, id, env) {
+    const stripe = getStripe(env)
+    if (!stripe) return fail(503, 'Stripe no está configurado', 'STRIPE_NOT_CONFIGURED')
+    const customerId = await this.getOrCreateStripeCustomer(user, env)
+    await stripe.paymentMethods.attach(id, { customer: customerId })
+    await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: id } })
+    return json({ ok: true })
+  },
+
+  async deletePaymentMethod(user, id, env) {
+    const stripe = getStripe(env)
+    if (!stripe) return fail(503, 'Stripe no está configurado', 'STRIPE_NOT_CONFIGURED')
+    await stripe.paymentMethods.detach(id)
+    return new Response(null, { status: 204 })
+  },
+
+  // Panel: saldo, liquidaciones, cobros y reembolsos REALES de Stripe.
+  async adminStripeFinance(env) {
+    const stripe = getStripe(env)
+    if (!stripe) return fail(503, 'Stripe no está configurado', 'STRIPE_NOT_CONFIGURED')
+    const [balance, payouts, charges] = await Promise.all([
+      stripe.balance.retrieve(),
+      stripe.payouts.list({ limit: 20 }),
+      stripe.charges.list({ limit: 50 }),
+    ])
+    return json({
+      mode: stripeMode(env),
+      currency: env.STRIPE_CURRENCY || 'eur',
+      available: balance.available.map((b) => ({ amount: b.amount, currency: b.currency })),
+      pending: balance.pending.map((b) => ({ amount: b.amount, currency: b.currency })),
+      payouts: payouts.data.map((p) => ({ id: p.id, amount: p.amount, status: p.status, arrivalDate: p.arrival_date, currency: p.currency })),
+      charges: charges.data.map((c) => ({ id: c.id, amount: c.amount, status: c.status, paid: c.paid, refunded: c.refunded, currency: c.currency, created: c.created, email: c.billing_details?.email ?? null })),
+    })
+  },
+
+  // Reembolso REAL vía Stripe + revocación de acceso al producto.
+  async adminStripeRefund(env, body) {
+    const stripe = getStripe(env)
+    if (!stripe) return fail(503, 'Stripe no está configurado', 'STRIPE_NOT_CONFIGURED')
+    const chargeId = String(body?.chargeId ?? '')
+    const amount = body?.amount ? Math.round(Number(body.amount)) : undefined
+    if (!chargeId) return fail(400, 'Falta el id del cobro', 'MISSING_CHARGE')
+    const refund = await stripe.refunds.create({ charge: chargeId, ...(amount ? { amount } : {}) })
+    return json({ id: refund.id, status: refund.status, amount: refund.amount })
+  },
+
   // PEDIDOS
   async createOrder(req, body, env) {
     const items = Array.isArray(body?.items) ? body.items : []
@@ -2794,6 +3158,30 @@ const handlers = {
   },
 
   // BIBLIOTECA DIGITAL: productos comprados por el usuario (con acceso y descarga)
+  // HISTORIAL DE COMPRAS del usuario (estado, método de pago oculto, total).
+  async myOrders(user) {
+    const orders = await db.all(
+      `SELECT id, total, discount, status, payment_method, transaction_id, created_at, points_earned
+       FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT 100`,
+      user.id,
+    )
+    const out = []
+    for (const o of orders) {
+      const items = await db.all('SELECT id, product_id, name, price, qty, license_key FROM order_items WHERE order_id = ?', o.id)
+      out.push({
+        id: o.id,
+        total: o.total,
+        discount: o.discount ?? 0,
+        status: o.status,
+        paymentMethod: o.payment_method ?? 'stripe',
+        createdAt: o.created_at,
+        pointsEarned: o.points_earned ?? 0,
+        items: items.map((it) => ({ productId: String(it.product_id), name: it.name, price: it.price, qty: it.qty, licenseKey: it.license_key ?? null })),
+      })
+    }
+    return json({ items: out })
+  },
+
   // DESCARGAR PRODUCTO GRATUITO: lo añade a la biblioteca al instante con licencia.
   async freeProduct(user, body, env) {
     const productId = String(body?.productId ?? '')
@@ -3077,6 +3465,98 @@ const handlers = {
 
 // Orden importante: rutas más específicas primero.
 // Formato: [método, regex, handler, requiereSesion, requiereAdmin]
+/* ------------------------------------------------------------------------
+ * Webhook de Stripe: verificación criptográfica de la firma.
+ * La confirmación definitiva del pedido depende EXCLUSIVAMENTE de este
+ * evento verificado por el backend — nunca del navegador.
+ * ---------------------------------------------------------------------- */
+async function handleStripeWebhook(rawBody, signature, env) {
+  const stripe = getStripe(env)
+  if (!stripe) return fail(503, 'Stripe no está configurado', 'STRIPE_NOT_CONFIGURED')
+  const secret = env.STRIPE_WEBHOOK_SECRET
+  if (!secret) return fail(500, 'Webhook sin secreto configurado', 'WEBHOOK_MISCONFIGURED')
+
+  let event
+  try {
+    event = stripe.webhooks.constructEvent(rawBody, signature, secret)
+  } catch (err) {
+    return fail(400, `Firma de webhook inválida: ${err.message}`, 'SIGNATURE_INVALID')
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object
+        const orderId = Number(session.client_reference_id || session.metadata?.orderId)
+        if (!orderId) return fail(400, 'Sesión sin pedido asociado', 'NO_ORDER')
+        // Idempotencia: si el pedido ya está pagado/entregado, no hacemos nada.
+        const order = await db.get('SELECT * FROM orders WHERE id = ?', orderId)
+        if (!order) return fail(404, 'Pedido no encontrado', 'NOT_FOUND')
+        if (order.status === 'paid' || order.status === 'delivered' || order.status === 'refunded') {
+          return json({ received: true, duplicate: true })
+        }
+        // Confirmado por el proveedor → pedido PAGADO + licencias + biblioteca.
+        await db.run(
+          "UPDATE orders SET status = 'paid', transaction_id = COALESCE(transaction_id, ?), payment_status = 'approved', payment_method = 'stripe' WHERE id = ?",
+          session.payment_intent ? String(session.payment_intent) : null, orderId,
+        )
+        const items = await db.all('SELECT * FROM order_items WHERE order_id = ?', orderId)
+        for (const it of items) {
+          const prod = await db.get('SELECT version FROM products WHERE id = ?', String(it.product_id))
+          const licenseKey = `VERTA-${rand4()}-${rand4()}-${rand4()}`
+          await db.run('UPDATE order_items SET license_key = ?, version_at_purchase = ? WHERE id = ?', licenseKey, prod?.version ?? '1.0.0', it.id)
+          await db.run('UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?', Number(it.qty ?? 1), String(it.product_id))
+        }
+        // Puntos de fidelidad.
+        const earned = Math.floor(order.total / 10)
+        if (order.user_id && earned > 0) {
+          await db.run('UPDATE users SET points = points + ? WHERE id = ?', earned, order.user_id)
+          await db.run('INSERT INTO points_history (user_id, delta, reason, ref_type, ref_id) VALUES (?, ?, ?, ?, ?)', order.user_id, earned, 'Compra · puntos de fidelidad', 'order', orderId)
+          await db.run('UPDATE orders SET points_earned = ? WHERE id = ?', earned, orderId)
+        }
+        // Correo de confirmación con enlace privado de seguimiento.
+        const frontend = env.FRONTEND_URL || 'https://vertamart.pages.dev'
+        const trackingUrl = `${frontend}/pedido/${order.tracking_token}`
+        const itemsHtml = items.map((it) => `<li style="margin:2px 0">${String(it.name ?? '')} × ${Number(it.qty ?? 1)}</li>`).join('')
+        await sendEmail(
+          env,
+          order.customer_email,
+          `Vertamart — pago confirmado del pedido #${orderId}`,
+          `<p>Hola ${order.customer_name},</p><p>¡Pago confirmado! Tu pedido digital <strong>#${orderId}</strong> ya está disponible en tu biblioteca (<em>Mis descargas</em>).</p><ul>${itemsHtml}</ul><p>Total: <strong>${Number(order.total).toLocaleString('es-ES')} €</strong></p><p>Sigue tu pedido: <a href="${trackingUrl}">${trackingUrl}</a></p>`,
+        ).catch(() => 0)
+        if (order.user_id) {
+          await pushToAllForUser(env, order.user_id, '✅ Pago confirmado', `Pedido #${orderId} disponible en tu biblioteca`, '/cuenta?tab=descargas').catch(() => 0)
+        }
+        return json({ received: true, orderId })
+      }
+      case 'checkout.session.expired':
+      case 'payment_intent.payment_failed': {
+        const session = event.data.object
+        const orderId = Number(session.client_reference_id || session.metadata?.orderId)
+        if (orderId) {
+          await db.run("UPDATE orders SET status = 'failed' WHERE id = ? AND status = 'pending'", orderId)
+        }
+        return json({ received: true })
+      }
+      case 'charge.refunded': {
+        // Reembolso: se revoca el acceso (el producto sale de la biblioteca).
+        const charge = event.data.object
+        const pi = charge.payment_intent
+        const order = pi ? await db.get('SELECT * FROM orders WHERE transaction_id = ?', String(pi)) : null
+        if (order) {
+          await db.run("UPDATE orders SET status = 'refunded', refund_status = 'full', refund_amount = ?, refund_reason = 'Reembolso vía Stripe' WHERE id = ?", Math.round(charge.amount_refunded), order.id)
+          await db.run('DELETE FROM order_items WHERE order_id = ?', order.id)
+        }
+        return json({ received: true })
+      }
+      default:
+        return json({ received: true })
+    }
+  } catch (err) {
+    return fail(500, `Error procesando webhook: ${err.message}`, 'WEBHOOK_ERROR')
+  }
+}
+
 const ROUTES = [
   ['GET', /^\/api\/admin\/payout-account$/, (u) => handlers.getPayoutAccount(), true, true],
   ['PUT', /^\/api\/admin\/payout-account$/, (u, b) => handlers.savePayoutAccount(b), true, true],
@@ -3131,6 +3611,7 @@ const ROUTES = [
   ['GET', /^\/api\/users\/(\d+)$/, (u, b, req, m) => handlers.getUser(u, Number(m[1])), false, false],
   ['GET', /^\/api\/me\/points$/, (u) => handlers.mePoints(u), true, false],
   ['GET', /^\/api\/me\/library$/, (u) => handlers.myLibrary(u), true, false],
+  ['GET', /^\/api\/me\/orders$/, (u) => handlers.myOrders(u), true, false],
   ['POST', /^\/api\/me\/library\/free$/, (u, b, req, m, env) => handlers.freeProduct(u, b, env), true, false],
   ['GET', /^\/api\/me\/library\/(\d+)\/download$/, (u, b, req, m, env) => handlers.downloadProduct(u, m[1], env), true, false],
   ['POST', /^\/api\/push\/subscribe$/, (u, b) => handlers.pushSubscribe(u, b), true, false],
@@ -3146,6 +3627,16 @@ const ROUTES = [
   ['PATCH', /^\/api\/messages\/(\d+)$/, (u, b, req, m) => handlers.editMessage(u, Number(m[1]), b), true, false],
   ['DELETE', /^\/api\/messages\/(\d+)$/, (u, b, req, m) => handlers.deleteMessage(u, Number(m[1])), true, false],
   ['POST', /^\/api\/orders$/, (u, b, req, m, env) => handlers.createOrder(req, b, env), false, false],
+  ['POST', /^\/api\/checkout\/stripe$/, (u, b, req, m, env) => handlers.stripeCheckout(u, b, env), true, false],
+  ['GET', /^\/api\/me\/payment-methods$/, (u, b, req, m, env) => handlers.mePaymentMethods(u, env), true, false],
+  ['POST', /^\/api\/me\/payment-methods\/setup$/, (u, b, req, m, env) => handlers.createPaymentSetup(u, env), true, false],
+  ['POST', /^\/api\/me\/payment-methods\/([A-Za-z0-9_]+)\/default$/, (u, b, req, m, env) => handlers.setDefaultPaymentMethod(u, m[1], env), true, false],
+  ['DELETE', /^\/api\/me\/payment-methods\/([A-Za-z0-9_]+)$/, (u, b, req, m, env) => handlers.deletePaymentMethod(u, m[1], env), true, false],
+  ['GET', /^\/api\/settings$/, (u, b, req, m, env) => handlers.getPublicSettings(env), false, false],
+  ['GET', /^\/api\/admin\/settings$/, (u, b, req, m, env) => handlers.adminGetSettings(env), true, true],
+  ['PATCH', /^\/api\/admin\/settings$/, (u, b, req, m, env) => handlers.adminPatchSettings(b), true, true],
+  ['GET', /^\/api\/admin\/stripe\/finance$/, (u, b, req, m, env) => handlers.adminStripeFinance(env), true, true],
+  ['POST', /^\/api\/admin\/stripe\/refund$/, (u, b, req, m, env) => handlers.adminStripeRefund(env, b), true, true],
   ['GET', /^\/api\/orders\/track\/([A-Za-z0-9]+)$/, (u, b, req, m) => handlers.trackOrder(m[1]), false, false],
   ['POST', /^\/api\/admin\/orders\/(\d+)\/approve$/, (u, b, req, m, env) => handlers.adminApproveOrder(Number(m[1]), env), true, true],
   ['GET', /^\/api\/admin\/promo-codes$/, (u) => handlers.adminPromoCodes(), true, true],
@@ -3198,6 +3689,12 @@ export default {
 
     await seedAdmin()
     await ensureAdminSchema()
+
+    // Webhook de Stripe: necesita el cuerpo RAW para verificar la firma.
+    if (path === '/api/webhooks/stripe' && request.method === 'POST') {
+      const raw = await request.text()
+      return withCors(await handleStripeWebhook(raw, request.headers.get('stripe-signature') || '', env))
+    }
 
     const body = request.method === 'GET' || request.method === 'DELETE' ? undefined : await request.json().catch(() => undefined)
 

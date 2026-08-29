@@ -17,8 +17,24 @@ migrations_dir = "migrations"
 # URL del frontend al que vuelven OAuth y los enlaces de recuperación.
 [vars]
 FRONTEND_URL = "https://vertamart.pages.dev"
+# Moneda de cobro real de Stripe (la cuenta de Vertamart cobra en EUR).
+# STRIPE_CURRENCY = "eur"
 
 # Secretos opcionales (configúralos con: npx wrangler secret put NOMBRE)
+#
+# ══════════ PAGOS REALES CON STRIPE ══════════
+# 1) Crea la cuenta en https://dashboard.stripe.com (enlace del asistente).
+# 2) Claves TEST (dashboard.stripe.com/test/apikeys):
+#      npx wrangler secret put STRIPE_SECRET_KEY   # sk_test_...
+#    La clave PÚBLICA (pk_test_...) se usa SOLO en el frontend en el build:
+#      VITE_STRIPE_PUBLISHABLE_KEY=... (no es secreta).
+# 3) Webhook (Developers → Webhooks → Add endpoint):
+#      URL:  https://vertamart-api.rcbegararoblox.workers.dev/api/webhooks/stripe
+#      Eventos: checkout.session.completed, checkout.session.expired,
+#               payment_intent.payment_failed, charge.refunded
+#      npx wrangler secret put STRIPE_WEBHOOK_SECRET   # whsec_...
+# 4) Para PRODUCCIÓN repite con las claves LIVE (sk_live_...). El panel
+#    muestra claramente si está en modo prueba o producción. NUNCA mezcles.
 #
 # Pagos reales con PayPal:
 #   PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_ENV   # sandbox o live

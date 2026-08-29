@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { CheckCircle2, CreditCard, Download, Landmark, Lock, Package, ShoppingBag, User, Wallet } from 'lucide-react'
+import { CheckCircle2, CreditCard, Download, Landmark, Lock, Package, ShieldCheck, ShoppingBag, User, Wallet } from 'lucide-react'
+import { SlowConnection } from '../components/ui/SlowConnection'
 import { useStore } from '../context/StoreContext'
 import { useCatalog } from '../context/CatalogContext'
 import { useAuth } from '../context/AuthContext'
@@ -16,10 +17,11 @@ import { cn } from '../lib/cn'
 
 const INSTALLMENTS = [1, 3, 6, 12]
 
-const PAYMENT_METHODS: { id: PaymentMethod; label: string; hint: string }[] = [
-  { id: 'card', label: 'Tarjeta de crédito / débito', hint: 'Visa, Mastercard, American Express' },
-  { id: 'webpay', label: 'Webpay (Transbank)', hint: 'Redirección segura a tu banco' },
-  { id: 'transfer', label: 'Transferencia bancaria', hint: 'Confirmación manual (24-48 h)' },
+/** Métodos de pago simulados (demo): solo admin con "Compra simulada" activada. */
+const DEMO_METHODS: { id: PaymentMethod; label: string; hint: string }[] = [
+  { id: 'card', label: 'Tarjeta (demo)', hint: 'Pago simulado' },
+  { id: 'webpay', label: 'Webpay (demo)', hint: 'Pago simulado' },
+  { id: 'transfer', label: 'Transferencia (demo)', hint: 'Pago simulado' },
 ]
 
 const BANK_DETAILS = {
@@ -63,13 +65,14 @@ export function Checkout() {
   const { products, status } = useCatalog()
   const { region } = useRegion()
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [form, setForm] = useState<FormState>(initialForm)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
   const [coupon] = usePersistentState<{ code: string; percent: number; type?: 'percent' | 'fixed'; value?: number } | null>('verta.coupon', null)
   const [pointsAvailable, setPointsAvailable] = useState(0)
   const [redeemPoints, setRedeemPoints] = useState(0)
   const [orderId] = useState(() => `VT-${Math.floor(100000 + Math.random() * 900000)}`)
-  const [method, setMethod] = useState<PaymentMethod>('card')
+  const [method, setMethod] = useState<PaymentMethod>('stripe')
   const [installments, setInstallments] = useState(1)
   const [card, setCard] = useState({ numero: '', vencimiento: '', cvv: '', titular: '' })
   const [cardErrors, setCardErrors] = useState<Partial<Record<keyof typeof card, string>>>({})
@@ -80,6 +83,25 @@ export function Checkout() {
   const [tracking, setTracking] = useState<{ url: string; emailSent: boolean } | null>(null)
   const navigate = useNavigate()
   const [payoutInfo, setPayoutInfo] = useState<{ provider: string; label: string; accountRef: string; paypalEmail?: string | null } | null>(null)
+  const [stripeReady, setStripeReady] = useState(false)
+  const [demoAllowed, setDemoAllowed] = useState(false)
+  const [stripeMode, setStripeMode] = useState<'test' | 'live'>('test')
+  const stripeModeLabel = stripeMode === 'live' ? 'modo producción' : 'modo prueba'
+
+  // Estado de pagos: ¿Stripe configurado? ¿Compra simulada permitida para admin?
+  useEffect(() => {
+    storeService.publicSettings()
+      .then((s) => {
+        setStripeReady(s.stripeConfigured)
+        setStripeMode(s.stripeMode === 'live' ? 'live' : 'test')
+        setDemoAllowed(s.demoPaymentsEnabled && isAdmin)
+        if (!s.stripeConfigured && !(s.demoPaymentsEnabled && isAdmin)) {
+          setPayError('El sistema de pago aún no está disponible. Inténtalo más tarde.')
+        }
+      })
+      .catch(() => setStripeReady(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   // Datos reales de la cuenta receptora (los del Panel → Cuentas) para pagos por transferencia.
   useEffect(() => {
@@ -244,6 +266,63 @@ export function Checkout() {
     return Object.keys(er).length === 0
   }
 
+  // Ejecuta el pago (Stripe o demo). Lanza errores para que el llamador los muestre.
+  const runPayment = async () => {
+    const res = await paymentsProvider.processPayment({
+      orderId,
+      amount: total,
+      method,
+      installments: method === 'card' ? installments : undefined,
+      card: method === 'card'
+        ? { number: card.numero.replace(/\s/g, ''), expiry: card.vencimiento, cvv: card.cvv, holder: card.titular }
+        : undefined,
+      customer: { name: form.nombre, email: form.email },
+      items: allItems.map(({ product, qty }) => ({ productId: product.id, name: product.name, price: product.price, qty })),
+      promoCode: coupon?.code,
+    })
+    // Pago REAL: Stripe redirige al checkout alojado.
+    if (res.status === 'redirect' && res.redirectUrl) {
+      // El backend ya creó el pedido pendiente; al volver, el webhook lo confirma.
+      window.location.href = res.redirectUrl
+      return
+    }
+    if (res.status === 'approved' || res.status === 'pending') {
+      setResult({ transactionId: res.transactionId ?? orderId, status: res.status })
+      // Guardar el pedido primero: devuelve el enlace privado del correo.
+      void storeService
+        .createOrder({
+          items: allItems.map(({ product, qty }) => ({ productId: product.id, name: product.name, price: product.price, qty })),
+          subtotal: regularSubtotal,
+          discount: discount + bundleSavings,
+          shipping: 0,
+          total,
+          method,
+          transactionId: res.transactionId,
+          installments: method === 'card' ? installments : undefined,
+          paymentStatus: res.status,
+          customerName: form.nombre,
+          customerEmail: form.email,
+          redeemPoints: pointsDiscount,
+          promoCode: coupon?.code,
+        })
+        .then((saved) => {
+          clearCart()
+          setDone(true)
+          if (saved.trackingUrl) {
+            setTracking({ url: saved.trackingUrl, emailSent: !!saved.emailSent })
+            notify(saved.emailSent ? `Seguimiento enviado a ${form.email}` : 'Pedido creado. Guarda el enlace de seguimiento', 'info')
+          }
+        })
+        .catch(() => {
+          clearCart()
+          setDone(true)
+          notify('Pedido creado localmente; no se pudo enviar el correo', 'info')
+        })
+    } else {
+      setPayError(res.message ?? 'El pago no pudo completarse. Intenta de nuevo.')
+    }
+  }
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!validate()) {
@@ -257,56 +336,20 @@ export function Checkout() {
     setPayError('')
     setProcessing(true)
     try {
-      const res = await paymentsProvider.processPayment({
-        orderId,
-        amount: total,
-        method,
-        installments: method === 'card' ? installments : undefined,
-        card: method === 'card'
-          ? { number: card.numero.replace(/\s/g, ''), expiry: card.vencimiento, cvv: card.cvv, holder: card.titular }
-          : undefined,
-        customer: { name: form.nombre, email: form.email },
-      })
-      if (res.status === 'approved' || res.status === 'pending') {
-        setResult({ transactionId: res.transactionId ?? orderId, status: res.status })
-        // Guardar el pedido primero: devuelve el enlace privado del correo.
-        void storeService
-          .createOrder({
-            items: allItems.map(({ product, qty }) => ({ productId: product.id, name: product.name, price: product.price, qty })),
-            subtotal: regularSubtotal,
-            discount: discount + bundleSavings,
-            shipping: 0,
-            total,
-            method,
-            transactionId: res.transactionId,
-            installments: method === 'card' ? installments : undefined,
-            paymentStatus: res.status,
-            customerName: form.nombre,
-            customerEmail: form.email,
-            redeemPoints: pointsDiscount,
-            promoCode: coupon?.code,
-          })
-          .then((saved) => {
-            clearCart()
-            setDone(true)
-            if (saved.trackingUrl) {
-              setTracking({ url: saved.trackingUrl, emailSent: !!saved.emailSent })
-              notify(saved.emailSent ? `Seguimiento enviado a ${form.email}` : 'Pedido creado. Guarda el enlace de seguimiento', 'info')
-            }
-          })
-          .catch(() => {
-            clearCart()
-            setDone(true)
-            notify('Pedido creado localmente; no se pudo enviar el correo', 'info')
-          })
-      } else {
-        setPayError(res.message ?? 'El pago no pudo completarse. Intenta de nuevo.')
-      }
+      await runPayment()
     } catch (err) {
-      setPayError(err instanceof Error ? err.message : 'Error al procesar el pago')
+      setPayError(err instanceof Error ? err.message : 'El pago no se ha completado. Intenta de nuevo.')
     } finally {
       setProcessing(false)
     }
+  }
+
+  // Reintento (conexión lenta): relanza la misma operación sin revalidar.
+  const submitForRetry = async () => {
+    if (processing) return
+    setPayError('')
+    setProcessing(true)
+    try { await runPayment() } catch (err) { setPayError(err instanceof Error ? err.message : 'El pago no se ha completado. Intenta de nuevo.') } finally { setProcessing(false) }
   }
 
   const field = (k: keyof FormState, label: string, placeholder: string, extra?: { type?: string; className?: string }) => (
@@ -346,9 +389,15 @@ export function Checkout() {
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Finalizar compra</h1>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
-          <Lock className="h-3.5 w-3.5" /> Pago simulado (demo)
-        </span>
+        {stripeReady ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+            <ShieldCheck className="h-3.5 w-3.5" /> Pago seguro con Stripe
+          </span>
+        ) : demoAllowed ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            <Lock className="h-3.5 w-3.5" /> Pago simulado (solo admin)
+          </span>
+        ) : null}
       </div>
 
       <form onSubmit={submit} noValidate className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
@@ -376,10 +425,22 @@ export function Checkout() {
           {/* Método de pago */}
           <section className="rounded-2xl border border-slate-200 bg-white p-6">
             <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900"><CreditCard className="h-5 w-5 text-brand-600" /> Método de pago</h2>
-            <p className="mt-1 text-xs text-slate-400">Demo: no se procesan pagos reales ni se almacenan datos de tarjeta.</p>
 
             <div className="mt-4 space-y-3">
-              {PAYMENT_METHODS.map((m) => (
+              {stripeReady && (
+                <label className={cn('flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-colors', method === 'stripe' ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-brand-300')}>
+                  <input type="radio" name="payment" value="stripe" checked={method === 'stripe'} onChange={() => setMethod('stripe')} className="h-4 w-4 accent-brand-600" />
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-500 shadow-sm">
+                    <CreditCard className="h-5 w-5" />
+                  </span>
+                  <span className="flex-1">
+                    <span className="block font-semibold text-slate-800">Tarjeta · Apple Pay · Google Pay</span>
+                    <span className="block text-sm text-slate-500">Checkout seguro alojado por Stripe · {stripeModeLabel}</span>
+                  </span>
+                  <ShieldCheck className="h-5 w-5 shrink-0 text-green-600" />
+                </label>
+              )}
+              {demoAllowed && DEMO_METHODS.map((m) => (
                 <label key={m.id} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition-colors', method === m.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-brand-300')}>
                   <input type="radio" name="payment" value={m.id} checked={method === m.id} onChange={() => setMethod(m.id)} className="h-4 w-4 accent-brand-600" />
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-500 shadow-sm">
@@ -391,9 +452,22 @@ export function Checkout() {
                     <span className="block font-semibold text-slate-800">{m.label}</span>
                     <span className="block text-sm text-slate-500">{m.hint}</span>
                   </span>
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-600">DEMO</span>
                 </label>
               ))}
+              {!stripeReady && !demoAllowed && (
+                <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                  El sistema de pago aún no está disponible. Vuelve en unos minutos.
+                </p>
+              )}
             </div>
+
+            {method === 'stripe' && stripeReady && (
+              <div className="mt-5 flex items-start gap-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
+                <p>Serás redirigido al <strong>checkout seguro de Stripe</strong> (PCI-DSS) para pagar con tarjeta, Apple Pay o Google Pay. El pago se verifica por el servidor antes de entregarte el producto.</p>
+              </div>
+            )}
 
             {method === 'card' && (
               <div className="mt-5 rounded-xl bg-slate-50 p-4">
@@ -546,14 +620,17 @@ export function Checkout() {
           </div>
 
           <Button type="submit" size="lg" loading={processing} className="mt-5 w-full" disabled={processing}>
-            {processing ? 'Procesando pago...' : method === 'transfer' ? `Confirmar pedido` : `Pagar ${formatPrice(total, region)}`}
+            {processing ? (method === 'stripe' ? 'Conectando con el checkout seguro…' : 'Procesando pago...') : method === 'transfer' ? `Confirmar pedido` : method === 'stripe' ? `Pagar ${formatPrice(total, region)}` : `Pagar ${formatPrice(total, region)}`}
           </Button>
           <button type="button" onClick={() => navigate('/carrito')} className="mt-3 w-full text-center text-sm text-slate-400 hover:text-slate-600">
             ← Volver al carrito
           </button>
-          <p className="mt-3 text-center text-xs text-slate-400">Compra protegida · Pago 100% simulado</p>
+          <p className="mt-3 text-center text-xs text-slate-400">{stripeReady ? 'Compra protegida · Pago seguro procesado por Stripe' : 'Compra protegida · Pago simulado (solo admin)'}</p>
         </aside>
       </form>
+
+      {/* Conexión lenta: aviso con cuenta atrás y reintento automático */}
+      <SlowConnection active={processing} onRetry={() => { void submitForRetry() }} onLater={() => { setProcessing(false) }} />
     </div>
   )
 }

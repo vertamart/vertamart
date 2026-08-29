@@ -8,6 +8,7 @@ const ProductCatalog = lazy(() => import('./pages/ProductCatalog').then((m) => (
 const ProductDetail = lazy(() => import('./pages/ProductDetail').then((m) => ({ default: m.ProductDetail })))
 const Cart = lazy(() => import('./pages/Cart').then((m) => ({ default: m.Cart })))
 const Checkout = lazy(() => import('./pages/Checkout').then((m) => ({ default: m.Checkout })))
+const PaymentResult = lazy(() => import('./pages/PaymentResult').then((m) => ({ default: m.PaymentResult })))
 const Favorites = lazy(() => import('./pages/Favorites').then((m) => ({ default: m.Favorites })))
 const Categories = lazy(() => import('./pages/Categories').then((m) => ({ default: m.Categories })))
 const Sale = lazy(() => import('./pages/Sale').then((m) => ({ default: m.Sale })))
@@ -53,6 +54,8 @@ export default function App() {
           <Route path="/producto/:slug" element={<ProductDetail />} />
           <Route path="/carrito" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />
+          <Route path="/pago/exito" element={<PaymentResult />} />
+          <Route path="/pago/cancelado" element={<PaymentResult />} />
           <Route path="/favoritos" element={<Favorites />} />
           <Route path="/categorias" element={<Categories />} />
           <Route path="/ofertas" element={<Sale />} />

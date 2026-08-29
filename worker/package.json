@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "stripe": "^22.6.0",
     "worker-mailer": "^1.2.1"
   },
   "devDependencies": {

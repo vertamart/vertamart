@@ -1,4 +1,4 @@
-export type CategoryId = 'plantillas' | 'presets' | 'iconos' | 'fuentes' | 'modelos-3d' | 'plugins' | 'cursos' | 'packs'
+export type CategoryId = 'plantillas' | 'presets' | 'iconos' | 'fuentes' | 'modelos-3d' | 'plugins' | 'cursos' | 'packs' | 'android'
 
 export interface Product {
   id: string
@@ -64,6 +64,7 @@ export const CATEGORIES: Category[] = [
   { id: 'plugins', name: 'Plugins', tagline: 'Herramientas y kits' },
   { id: 'cursos', name: 'Cursos', tagline: 'Aprende diseño y 3D' },
   { id: 'packs', name: 'Packs', tagline: 'Recursos completos' },
+  { id: 'android', name: 'Android', tagline: 'Iconos, fondos y kits' },
 ]
 
 const daysAgo = (n: number) => {

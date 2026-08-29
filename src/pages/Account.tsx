@@ -12,6 +12,8 @@ import { ApiRequestError } from '../api/client'
 import { CATEGORIES } from '../data/products'
 import { Button } from '../components/ui/Button'
 import { ProductImage } from '../components/ui/ProductImage'
+import { PaymentMethods } from '../components/ui/PaymentMethods'
+import { OrdersHistory } from '../components/ui/OrdersHistory'
 import { ImageUpload } from '../components/ui/ImageUpload'
 import { authService, type VerificationChecks } from '../api/services/auth'
 import { formatDate } from '../lib/format'
@@ -502,6 +504,14 @@ export function Account() {
             Las tasas de conversión son indicativas y se ajustan en <code className="rounded bg-slate-100 px-1">src/lib/currency.ts</code>.
           </p>
         </section>
+
+        {/* Métodos de pago guardados (Stripe) */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+          <PaymentMethods />
+        </section>
+
+        {/* Historial de compras */}
+        <OrdersHistory />
 
         {/* Suscripción Premium */}
         <section className="rounded-2xl border border-slate-200 bg-white p-6">

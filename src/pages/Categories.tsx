@@ -12,6 +12,7 @@ const catIcons: Record<CategoryId, string> = {
   plugins: 'M9 3H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm10 10h-4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2zM5 15h4v4H5z',
   cursos: 'M12 5l8 3-8 3-8-3 8-3zm-8 5v5c0 1.1 3.6 3 8 3s8-1.9 8-3v-5M12 14v5',
   packs: 'M21 8l-9-5-9 5v8l9 5 9-5V8zm-9-3v4m-7 2l7 4 7-4',
+  android: 'M8 2l-1.5 3H6a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-.5L16 2h-2l-1 2h-2l-1-2H8zm-2 8h12v8H6v-8zm2 2v4m4-4v4',
 }
 
 export function Categories() {
